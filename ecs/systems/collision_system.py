@@ -30,6 +30,10 @@ class CollisionSystem(System):
                 enemy_collider = self.world.get_component(enemy_id, Collider)
                 enemy_health = self.world.get_component(enemy_id, Health)
                 
+                # Проверяем, что все компоненты существуют
+                if not enemy_pos or not enemy_collider or not enemy_health:
+                    continue
+                
                 # Проверяем столкновение
                 if self._check_collision(bullet_pos, bullet_collider, enemy_pos, enemy_collider):
                     # Наносим урон врагу
@@ -53,6 +57,10 @@ class CollisionSystem(System):
             player_collider = self.world.get_component(player_id, Collider)
             player_health = self.world.get_component(player_id, Health)
             
+            # Проверяем, что все компоненты существуют
+            if not player_pos or not player_collider or not player_health:
+                continue
+            
             # Пропускаем, если игрок неуязвим
             if player_health.invulnerable:
                 player_health.invulnerable_timer -= dt
@@ -64,6 +72,10 @@ class CollisionSystem(System):
                 enemy = self.world.get_component(enemy_id, Enemy)
                 enemy_pos = self.world.get_component(enemy_id, Position)
                 enemy_collider = self.world.get_component(enemy_id, Collider)
+                
+                # Проверяем, что все компоненты существуют
+                if not enemy or not enemy_pos or not enemy_collider:
+                    continue
                 
                 # Проверяем столкновение
                 if self._check_collision(player_pos, player_collider, enemy_pos, enemy_collider):
@@ -93,6 +105,10 @@ class CollisionSystem(System):
         :param collider2: Компонент Collider второй сущности
         :return: True, если есть столкновение, иначе False
         """
+        # Проверяем, что все параметры существуют
+        if not pos1 or not collider1 or not pos2 or not collider2:
+            return False
+            
         # Вычисляем границы первой сущности
         left1 = pos1.x - collider1.width / 2
         right1 = pos1.x + collider1.width / 2
@@ -105,6 +121,6 @@ class CollisionSystem(System):
         top2 = pos2.y - collider2.height / 2
         bottom2 = pos2.y + collider2.height / 2
         
-        # Проверяем пересечение
+        # Проверяем пересечение (AABB коллизия)
         return (left1 < right2 and right1 > left2 and
                 top1 < bottom2 and bottom1 > top2) 
