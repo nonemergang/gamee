@@ -95,6 +95,12 @@ class WeaponSystem(System):
             dx = dx / length
             dy = dy / length
         
+        # Смещаем начальную позицию пули от игрока в направлении выстрела
+        # чтобы избежать задержки пули в персонаже
+        offset = 20  # Расстояние смещения от игрока
+        x += dx * offset
+        y += dy * offset
+        
         # Добавляем компоненты
         self.world.add_component(bullet_id, Bullet(owner_id, damage))
         self.world.add_component(bullet_id, Position(x, y))

@@ -73,8 +73,9 @@ class PlayerControlSystem(System):
                 mouse_pos = pygame.mouse.get_pos()
                 
                 # Преобразуем экранные координаты в мировые с учетом смещения камеры
-                world_mouse_x = mouse_pos[0] - camera_offset[0]
-                world_mouse_y = mouse_pos[1] - camera_offset[1]
+                # Для правильного расчета направления стрельбы
+                world_mouse_x = mouse_pos[0] + camera_offset[0]
+                world_mouse_y = mouse_pos[1] + camera_offset[1]
                 
                 # Вычисляем направление стрельбы
                 dx = world_mouse_x - position.x

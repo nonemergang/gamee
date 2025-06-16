@@ -16,6 +16,7 @@ from ecs.factories.enemy_factory import create_enemy
 from ecs.components.components import Position, Tile, Player
 from ecs.systems.enemy_ai_system import EnemyAISystem
 from ecs.systems.health_system import HealthSystem
+from ecs.systems.lighting_system import LightingSystem
 
 # Инициализация Pygame
 pygame.init()
@@ -32,6 +33,7 @@ world = World()
 # Регистрируем системы
 camera_system = CameraSystem(world, screen_width, screen_height)
 render_system = RenderSystem(world, screen, camera_system)
+lighting_system = LightingSystem(world, screen, camera_system)
 movement_system = MovementSystem(world)
 collision_system = CollisionSystem(world)
 player_control_system = PlayerControlSystem(world)
@@ -45,6 +47,7 @@ world.add_system(player_control_system)
 world.add_system(enemy_ai_system)
 world.add_system(camera_system)
 world.add_system(render_system)
+# world.add_system(lighting_system)  # Отключено временно
 world.add_system(weapon_system)
 world.add_system(health_system)
 
@@ -54,8 +57,8 @@ def reset_game():
     world.clear_entities()
     
     # Создаем новый уровень (лабиринт)
-    level_width = 41  # Увеличенный размер для более сложного лабиринта
-    level_height = 41
+    level_width = 25  # Уменьшенный размер для более компактного лабиринта
+    level_height = 25
     level_entities = create_level(world, level_width, level_height)
     
     # Находим начальную позицию (вход в лабиринт)
@@ -75,7 +78,7 @@ def reset_game():
     player_id = create_player(world, entrance_pos.x, entrance_pos.y)
     
     # Создаем врагов в случайных местах
-    enemy_count = 10  # Больше врагов для более сложной игры
+    enemy_count = 6  # Меньше врагов для более компактной игры
     floor_tiles = []
     
     # Собираем все проходимые тайлы
