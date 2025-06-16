@@ -1,111 +1,176 @@
 import pygame
 from ecs.systems.system import System
-from ecs.components.components import Position, Sprite, Player, Enemy, Health, Weapon
-from ecs.systems.camera_system import CameraSystem
+from ecs.components.components import Position, Sprite, Health, Weapon
 
 class RenderSystem(System):
-    """Система для отрисовки всех сущностей"""
+    """Система для отрисовки игровых объектов"""
     
-    def __init__(self, world, screen):
+    def __init__(self, world, screen, camera_system):
+        """
+        Инициализирует систему отрисовки
+        :param world: Мир ECS
+        :param screen: Поверхность Pygame для отрисовки
+        :param camera_system: Система камеры для преобразования координат
+        """
         super().__init__(world)
         self.screen = screen
-        self.camera_system = None
+        self.camera_system = camera_system
         
-        # Шрифт для отображения текста
-        pygame.font.init()
-        self.font = pygame.font.Font(None, 24)
+        # Создаем шрифт для отображения текста
+        self.font = pygame.font.SysFont(None, 24)
+        
+        # Загружаем или создаем текстуры для интерфейса
+        self.ui_textures = self._create_ui_textures()
     
-    def render(self):
-        """Отрисовывает все сущности с компонентами Sprite"""
-        # Находим систему камеры
-        if self.camera_system is None:
-            self.camera_system = next((system for system in self.world.systems if isinstance(system, CameraSystem)), None)
+    def update(self, dt):
+        """
+        Отрисовывает все сущности с компонентами Position и Sprite
+        :param dt: Время, прошедшее с последнего обновления (в секундах)
+        """
+        # Очищаем экран
+        self.screen.fill((0, 0, 0))
         
         # Получаем смещение камеры
-        camera_offset = (0, 0)
-        if self.camera_system:
-            camera_offset = self.camera_system.get_camera_offset()
+        camera_offset = self.camera_system.get_camera_offset()
         
-        # Получаем все сущности со спрайтами и сортируем их по слоям
-        sprite_entities = self.world.get_entities_with_components(Position, Sprite)
-        sprite_entities_with_layers = [(entity_id, self.world.get_component(entity_id, Sprite).layer) for entity_id in sprite_entities]
-        sprite_entities_sorted = [entity_id for entity_id, _ in sorted(sprite_entities_with_layers, key=lambda x: x[1])]
+        # Собираем все сущности с компонентами Position и Sprite
+        renderable_entities = self.world.get_entities_with_components(Position, Sprite)
         
-        # Отрисовываем каждую сущность
-        for entity_id in sprite_entities_sorted:
+        # Сортируем сущности по слою отрисовки
+        sorted_entities = []
+        for entity_id in renderable_entities:
+            sprite = self.world.get_component(entity_id, Sprite)
+            sorted_entities.append((entity_id, sprite.layer))
+        
+        sorted_entities.sort(key=lambda x: x[1])
+        
+        # Отрисовываем сущности
+        for entity_id, _ in sorted_entities:
             position = self.world.get_component(entity_id, Position)
             sprite = self.world.get_component(entity_id, Sprite)
             
-            # Вычисляем экранные координаты с учетом смещения камеры
-            screen_x = int(position.x + camera_offset[0])
-            screen_y = int(position.y + camera_offset[1])
+            # Преобразуем мировые координаты в экранные
+            screen_x = position.x - camera_offset[0]
+            screen_y = position.y - camera_offset[1]
             
-            # Если у сущности есть изображение, отрисовываем его
+            # Проверяем, находится ли объект в пределах экрана
+            if (screen_x + sprite.width / 2 < 0 or screen_x - sprite.width / 2 > self.screen.get_width() or
+                screen_y + sprite.height / 2 < 0 or screen_y - sprite.height / 2 > self.screen.get_height()):
+                continue  # Пропускаем отрисовку объектов за пределами экрана
+            
+            # Создаем прямоугольник для отрисовки
+            rect = pygame.Rect(
+                screen_x - sprite.width / 2,
+                screen_y - sprite.height / 2,
+                sprite.width,
+                sprite.height
+            )
+            
+            # Если у спрайта есть изображение, отрисовываем его
             if sprite.image:
-                # Применяем поворот и отражение, если нужно
-                image = sprite.image
-                if sprite.flip_x or sprite.flip_y:
-                    image = pygame.transform.flip(image, sprite.flip_x, sprite.flip_y)
-                if sprite.angle != 0:
-                    image = pygame.transform.rotate(image, sprite.angle)
+                # Создаем копию изображения для поворота
+                rotated_image = pygame.transform.rotate(sprite.image, sprite.angle)
+                
+                # Получаем новый прямоугольник после поворота
+                rotated_rect = rotated_image.get_rect(center=rect.center)
                 
                 # Отрисовываем изображение
-                rect = image.get_rect(center=(screen_x, screen_y))
-                self.screen.blit(image, rect)
+                self.screen.blit(rotated_image, rotated_rect)
             else:
-                # Если изображения нет, отрисовываем прямоугольник или круг
-                pygame.draw.rect(self.screen, sprite.color, (screen_x - sprite.width // 2, screen_y - sprite.height // 2, sprite.width, sprite.height))
+                # Иначе отрисовываем цветной прямоугольник
+                pygame.draw.rect(self.screen, sprite.color, rect)
+            
+            # Если у сущности есть компонент здоровья, отрисовываем полоску здоровья
+            if self.world.has_component(entity_id, Health):
+                health = self.world.get_component(entity_id, Health)
+                self._render_health_bar(screen_x, screen_y, sprite.width, health)
         
         # Отрисовываем интерфейс
         self._render_ui()
     
+    def _render_health_bar(self, x, y, width, health):
+        """
+        Отрисовывает полоску здоровья
+        :param x: Позиция X
+        :param y: Позиция Y
+        :param width: Ширина объекта
+        :param health: Компонент здоровья
+        """
+        # Параметры полоски здоровья
+        bar_width = width
+        bar_height = 5
+        bar_y_offset = 10  # Смещение полоски здоровья вверх от объекта
+        
+        # Вычисляем процент здоровья
+        health_percent = health.current / health.maximum
+        
+        # Создаем прямоугольники для фона и заполнения
+        bg_rect = pygame.Rect(x - bar_width / 2, y - bar_height / 2 - bar_y_offset, bar_width, bar_height)
+        fill_rect = pygame.Rect(x - bar_width / 2, y - bar_height / 2 - bar_y_offset, bar_width * health_percent, bar_height)
+        
+        # Определяем цвет в зависимости от процента здоровья
+        if health_percent > 0.7:
+            color = (0, 255, 0)  # Зеленый
+        elif health_percent > 0.3:
+            color = (255, 255, 0)  # Желтый
+        else:
+            color = (255, 0, 0)  # Красный
+        
+        # Отрисовываем полоску здоровья
+        pygame.draw.rect(self.screen, (50, 50, 50), bg_rect)  # Фон
+        pygame.draw.rect(self.screen, color, fill_rect)  # Заполнение
+        pygame.draw.rect(self.screen, (200, 200, 200), bg_rect, 1)  # Граница
+    
     def _render_ui(self):
         """Отрисовывает пользовательский интерфейс"""
-        # Получаем игрока
-        player_entities = self.world.get_entities_with_components(Player, Health)
+        # Находим игрока
+        player_entities = self.world.get_entities_with_components(Position, Health, Weapon)
+        
         if not player_entities:
             return
         
         player_id = player_entities[0]
-        player_health = self.world.get_component(player_id, Health)
+        health = self.world.get_component(player_id, Health)
+        weapon = self.world.get_component(player_id, Weapon)
         
-        # Отрисовываем полосу здоровья
-        health_width = 200
-        health_height = 20
-        health_x = 20
-        health_y = 20
-        
-        # Фон полосы здоровья
-        pygame.draw.rect(self.screen, (50, 50, 50), (health_x, health_y, health_width, health_height))
-        
-        # Заполнение полосы здоровья
-        health_fill_width = int(health_width * (player_health.value / player_health.max_value))
-        pygame.draw.rect(self.screen, (255, 0, 0), (health_x, health_y, health_fill_width, health_height))
-        
-        # Рамка полосы здоровья
-        pygame.draw.rect(self.screen, (200, 200, 200), (health_x, health_y, health_width, health_height), 2)
-        
-        # Текст здоровья
-        health_text = f"HP: {player_health.value}/{player_health.max_value}"
+        # Отрисовываем здоровье игрока
+        health_text = f"Здоровье: {health.current}/{health.maximum}"
         health_surface = self.font.render(health_text, True, (255, 255, 255))
-        self.screen.blit(health_surface, (health_x + 10, health_y + (health_height - health_surface.get_height()) // 2))
+        self.screen.blit(health_surface, (10, 10))
         
-        # Отрисовываем информацию об оружии, если есть
-        if self.world.has_component(player_id, Weapon):
-            weapon = self.world.get_component(player_id, Weapon)
-            
-            # Отрисовываем количество патронов
-            ammo_text = f"Ammo: {weapon.ammo}/{weapon.max_ammo}"
-            ammo_surface = self.font.render(ammo_text, True, (255, 255, 255))
-            self.screen.blit(ammo_surface, (health_x, health_y + health_height + 10))
-            
-            # Отрисовываем тип оружия
-            weapon_text = f"Weapon: {weapon.type}"
-            weapon_surface = self.font.render(weapon_text, True, (255, 255, 255))
-            self.screen.blit(weapon_surface, (health_x, health_y + health_height + 40))
-            
-            # Если идет перезарядка, отображаем индикатор
-            if weapon.is_reloading:
-                reload_text = "Reloading..."
-                reload_surface = self.font.render(reload_text, True, (255, 255, 0))
-                self.screen.blit(reload_surface, (health_x + 150, health_y + health_height + 10)) 
+        # Отрисовываем боеприпасы
+        ammo_text = f"Патроны: {weapon.ammo}/{weapon.max_ammo}"
+        ammo_surface = self.font.render(ammo_text, True, (255, 255, 255))
+        self.screen.blit(ammo_surface, (10, 40))
+        
+        # Если идет перезарядка, отображаем индикатор
+        if weapon.is_reloading:
+            reload_progress = weapon.reload_timer / weapon.reload_time
+            reload_text = f"Перезарядка: {int(reload_progress * 100)}%"
+            reload_surface = self.font.render(reload_text, True, (255, 200, 0))
+            self.screen.blit(reload_surface, (10, 70))
+    
+    def _create_ui_textures(self):
+        """
+        Создает текстуры для интерфейса
+        :return: Словарь с текстурами
+        """
+        textures = {}
+        
+        # Создаем текстуру для иконки здоровья
+        health_icon = pygame.Surface((24, 24))
+        health_icon.fill((255, 0, 0))
+        pygame.draw.rect(health_icon, (200, 0, 0), (2, 2, 20, 20))
+        pygame.draw.rect(health_icon, (255, 255, 255), (10, 5, 4, 14))
+        pygame.draw.rect(health_icon, (255, 255, 255), (5, 10, 14, 4))
+        textures["health"] = health_icon
+        
+        # Создаем текстуру для иконки патронов
+        ammo_icon = pygame.Surface((24, 24))
+        ammo_icon.fill((100, 100, 100))
+        pygame.draw.rect(ammo_icon, (200, 200, 0), (2, 2, 20, 20))
+        pygame.draw.rect(ammo_icon, (255, 255, 255), (8, 5, 8, 15))
+        pygame.draw.rect(ammo_icon, (255, 255, 255), (6, 18, 12, 3))
+        textures["ammo"] = ammo_icon
+        
+        return textures 

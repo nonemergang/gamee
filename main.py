@@ -1,5 +1,6 @@
 import pygame
 import sys
+import random
 from pygame.locals import *
 from ecs.world import World
 from ecs.systems.render_system import RenderSystem
@@ -12,128 +13,136 @@ from ecs.systems.camera_system import CameraSystem
 from ecs.factories.player_factory import create_player
 from ecs.factories.level_factory import create_level
 from ecs.factories.enemy_factory import create_enemy
-from ecs.components.components import Position, Tile
+from ecs.components.components import Position, Tile, Player
+from ecs.systems.enemy_ai_system import EnemyAISystem
+from ecs.systems.health_system import HealthSystem
 
 # Инициализация Pygame
 pygame.init()
 
-# Константы
-SCREEN_WIDTH = 1280
-SCREEN_HEIGHT = 720
-TITLE = "Top Down Shooter - Maze"
-TILE_SIZE = 32
+# Настройки окна
+screen_width = 1024
+screen_height = 768
+screen = pygame.display.set_mode((screen_width, screen_height))
+pygame.display.set_caption("Лабиринт с ECS")
 
-# Настройка экрана
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption(TITLE)
-clock = pygame.time.Clock()
-
-# Создание мира ECS
+# Создаем мир ECS
 world = World()
 
-# Инициализация систем
-render_system = RenderSystem(world, screen)
+# Регистрируем системы
+camera_system = CameraSystem(world, screen_width, screen_height)
+render_system = RenderSystem(world, screen, camera_system)
 movement_system = MovementSystem(world)
-player_control_system = PlayerControlSystem(world)
 collision_system = CollisionSystem(world)
-enemy_system = EnemySystem(world)
+player_control_system = PlayerControlSystem(world)
+enemy_ai_system = EnemyAISystem(world)
 weapon_system = WeaponSystem(world)
-camera_system = CameraSystem(world, SCREEN_WIDTH, SCREEN_HEIGHT)
+health_system = HealthSystem(world)
 
-# Добавление систем в мир
-world.add_system(player_control_system)
 world.add_system(movement_system)
-world.add_system(enemy_system)
-world.add_system(weapon_system)
 world.add_system(collision_system)
+world.add_system(player_control_system)
+world.add_system(enemy_ai_system)
 world.add_system(camera_system)
 world.add_system(render_system)
+world.add_system(weapon_system)
+world.add_system(health_system)
 
-# Размеры лабиринта
-MAZE_WIDTH = 61
-MAZE_HEIGHT = 41
-
-# Создание игровых объектов
-level_entities = create_level(world, MAZE_WIDTH, MAZE_HEIGHT)
-
-# Находим вход в лабиринт для размещения игрока
-entrance_pos = None
-exit_pos = None
-
-# Ищем тайлы входа и выхода
-for entity_id in level_entities:
-    if world.has_component(entity_id, Tile):
-        tile = world.get_component(entity_id, Tile)
-        pos = world.get_component(entity_id, Position)
-        
-        if tile.type == "entrance":
-            entrance_pos = (pos.x, pos.y)
-        elif tile.type == "exit":
-            exit_pos = (pos.x, pos.y)
-
-# Создаем игрока у входа в лабиринт
-player = None
-if entrance_pos:
-    player = create_player(world, entrance_pos[0], entrance_pos[1])
-else:
-    # Если вход не найден, создаем игрока в центре
-    player = create_player(world, MAZE_WIDTH * TILE_SIZE // 2, MAZE_HEIGHT * TILE_SIZE // 2)
-
-# Создаем врагов в случайных местах лабиринта
-def find_empty_spaces(num_spaces):
-    """Находит пустые места для размещения врагов"""
-    empty_spaces = []
+def reset_game():
+    """Сбрасывает игру и создает новый уровень"""
+    # Удаляем все сущности
+    world.clear_entities()
     
+    # Создаем новый уровень (лабиринт)
+    level_width = 41  # Увеличенный размер для более сложного лабиринта
+    level_height = 41
+    level_entities = create_level(world, level_width, level_height)
+    
+    # Находим начальную позицию (вход в лабиринт)
+    entrance_pos = None
     for entity_id in level_entities:
         if world.has_component(entity_id, Tile):
             tile = world.get_component(entity_id, Tile)
-            pos = world.get_component(entity_id, Position)
+            if tile.name == "entrance":
+                entrance_pos = world.get_component(entity_id, Position)
+                break
+    
+    # Если не нашли вход, используем случайную позицию
+    if not entrance_pos:
+        entrance_pos = Position(100, 100)
+    
+    # Создаем игрока
+    player_id = create_player(world, entrance_pos.x, entrance_pos.y)
+    
+    # Создаем врагов в случайных местах
+    enemy_count = 10  # Больше врагов для более сложной игры
+    floor_tiles = []
+    
+    # Собираем все проходимые тайлы
+    for entity_id in level_entities:
+        if world.has_component(entity_id, Tile):
+            tile = world.get_component(entity_id, Tile)
+            if tile.walkable and tile.name == "floor":
+                pos = world.get_component(entity_id, Position)
+                floor_tiles.append((pos.x, pos.y))
+    
+    # Создаем врагов на случайных проходимых тайлах
+    if floor_tiles:
+        for _ in range(enemy_count):
+            # Выбираем случайную позицию
+            x, y = random.choice(floor_tiles)
             
-            # Используем только проходимые тайлы, которые не вход и не выход
-            if tile.walkable and tile.type not in ["entrance", "exit"]:
-                empty_spaces.append((pos.x, pos.y))
+            # Проверяем, что позиция достаточно далеко от игрока
+            player_pos = world.get_component(player_id, Position)
+            distance = ((x - player_pos.x) ** 2 + (y - player_pos.y) ** 2) ** 0.5
+            
+            # Если позиция слишком близко к игроку, пробуем другую
+            attempts = 0
+            while distance < 200 and attempts < 10:
+                x, y = random.choice(floor_tiles)
+                distance = ((x - player_pos.x) ** 2 + (y - player_pos.y) ** 2) ** 0.5
+                attempts += 1
+            
+            # Создаем врага
+            create_enemy(world, x, y)
     
-    # Перемешиваем и берем нужное количество
-    import random
-    random.shuffle(empty_spaces)
-    return empty_spaces[:min(num_spaces, len(empty_spaces))]
+    # Устанавливаем камеру на игрока
+    camera_system.follow(player_id)
 
-# Создаем врагов
-enemy_positions = find_empty_spaces(10)  # Создаем 10 врагов
-for i, pos in enumerate(enemy_positions):
-    # Чередуем типы врагов
-    enemy_type = "basic"
-    if i % 3 == 1:
-        enemy_type = "fast"
-    elif i % 3 == 2:
-        enemy_type = "tank"
-    
-    create_enemy(world, pos[0], pos[1], enemy_type)
+# Инициализация игры
+reset_game()
 
-def main():
-    running = True
-    
-    while running:
-        # Обработка событий
-        for event in pygame.event.get():
-            if event.type == QUIT:
+# Основной игровой цикл
+clock = pygame.time.Clock()
+running = True
+
+while running:
+    # Обработка событий
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
                 running = False
-            elif event.type == KEYDOWN:
-                if event.key == K_ESCAPE:
-                    running = False
-        
-        # Обновление систем
-        world.update(clock.get_time() / 1000.0)
-        
-        # Отрисовка
-        screen.fill((0, 0, 0))
-        world.render()
-        
-        pygame.display.flip()
-        clock.tick(60)
+            elif event.key == pygame.K_r:
+                # Сброс игры при нажатии R
+                reset_game()
     
-    pygame.quit()
-    sys.exit()
+    # Получаем время, прошедшее с последнего кадра
+    dt = clock.tick(60) / 1000.0  # Конвертируем миллисекунды в секунды
+    
+    # Обновляем все системы
+    world.update(dt)
+    
+    # Проверяем, жив ли игрок
+    player_entities = world.get_entities_with_components(Position, Player)
+    if not player_entities:
+        # Если игрок умер, сбрасываем игру
+        reset_game()
+    
+    # Обновляем экран
+    pygame.display.flip()
 
-if __name__ == "__main__":
-    main() 
+# Завершение работы
+pygame.quit()
+sys.exit() 

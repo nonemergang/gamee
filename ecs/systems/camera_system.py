@@ -1,65 +1,79 @@
+import pygame
 from ecs.systems.system import System
-from ecs.components.components import Position, Player, Camera
+from ecs.components.components import Position, Player
 
 class CameraSystem(System):
-    """Система для управления камерой, следующей за игроком"""
+    """Система для управления камерой в игре"""
     
     def __init__(self, world, screen_width, screen_height):
+        """
+        Инициализирует систему камеры
+        :param world: Мир ECS
+        :param screen_width: Ширина экрана
+        :param screen_height: Высота экрана
+        """
         super().__init__(world)
         self.screen_width = screen_width
         self.screen_height = screen_height
-        self.camera_entity = None
+        self.target_id = None
+        self.offset_x = 0
+        self.offset_y = 0
+        self.smoothness = 0.1  # Параметр сглаживания движения камеры (0-1)
+    
+    def follow(self, entity_id):
+        """
+        Устанавливает цель для следования камеры
+        :param entity_id: ID сущности для следования
+        """
+        self.target_id = entity_id
     
     def update(self, dt):
         """
         Обновляет положение камеры
         :param dt: Время, прошедшее с последнего обновления (в секундах)
         """
-        # Если камера еще не создана, создаем её
-        if self.camera_entity is None:
-            self.camera_entity = self._create_camera()
-        
-        # Получаем компонент камеры
-        camera = self.world.get_component(self.camera_entity, Camera)
-        camera_pos = self.world.get_component(self.camera_entity, Position)
-        
-        # Если у камеры есть цель, следуем за ней
-        if camera.target_id is not None and self.world.has_component(camera.target_id, Position):
-            target_pos = self.world.get_component(camera.target_id, Position)
-            
-            # Плавно перемещаем камеру к цели
-            lerp_factor = 5.0 * dt  # Коэффициент интерполяции
-            camera_pos.x += (target_pos.x - camera_pos.x) * lerp_factor
-            camera_pos.y += (target_pos.y - camera_pos.y) * lerp_factor
-        
-        # Если у камеры нет цели, ищем игрока
-        else:
+        if self.target_id is None:
+            # Если нет цели, ищем игрока
             player_entities = self.world.get_entities_with_components(Player, Position)
             if player_entities:
-                camera.target_id = player_entities[0]
+                self.target_id = player_entities[0]
+        
+        if self.target_id is not None and self.world.has_component(self.target_id, Position):
+            position = self.world.get_component(self.target_id, Position)
+            
+            # Вычисляем целевое положение камеры (центрирование на игроке)
+            target_offset_x = position.x - self.screen_width / 2
+            target_offset_y = position.y - self.screen_height / 2
+            
+            # Плавно перемещаем камеру к целевому положению
+            self.offset_x += (target_offset_x - self.offset_x) * self.smoothness
+            self.offset_y += (target_offset_y - self.offset_y) * self.smoothness
     
     def get_camera_offset(self):
         """
-        Возвращает смещение камеры для отрисовки
+        Возвращает текущее смещение камеры
         :return: Кортеж (offset_x, offset_y)
         """
-        if self.camera_entity is None:
-            return (0, 0)
-        
-        camera_pos = self.world.get_component(self.camera_entity, Position)
-        
-        # Смещение - это разница между центром экрана и позицией камеры
-        offset_x = self.screen_width / 2 - camera_pos.x
-        offset_y = self.screen_height / 2 - camera_pos.y
-        
-        return (offset_x, offset_y)
+        return (self.offset_x, self.offset_y)
     
-    def _create_camera(self):
+    def world_to_screen(self, x, y):
         """
-        Создает сущность камеры
-        :return: ID сущности камеры
+        Преобразует мировые координаты в экранные
+        :param x: Мировая координата X
+        :param y: Мировая координата Y
+        :return: Кортеж экранных координат (screen_x, screen_y)
         """
-        camera_entity = self.world.create_entity()
-        self.world.add_component(camera_entity, Camera())
-        self.world.add_component(camera_entity, Position(0, 0))
-        return camera_entity 
+        screen_x = x - self.offset_x
+        screen_y = y - self.offset_y
+        return (screen_x, screen_y)
+    
+    def screen_to_world(self, screen_x, screen_y):
+        """
+        Преобразует экранные координаты в мировые
+        :param screen_x: Экранная координата X
+        :param screen_y: Экранная координата Y
+        :return: Кортеж мировых координат (world_x, world_y)
+        """
+        world_x = screen_x + self.offset_x
+        world_y = screen_y + self.offset_y
+        return (world_x, world_y) 

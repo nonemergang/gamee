@@ -47,6 +47,22 @@ def get_textures():
     pygame.draw.circle(exit_texture, (250, 150, 150), (16, 16), 5)
     textures["exit"] = exit_texture
     
+    # Декоративные элементы
+    # Трещина на полу
+    crack_texture = pygame.Surface((32, 32), pygame.SRCALPHA)
+    pygame.draw.line(crack_texture, (100, 100, 110), (10, 10), (22, 22), 2)
+    pygame.draw.line(crack_texture, (100, 100, 110), (22, 22), (28, 18), 2)
+    textures["crack"] = crack_texture
+    
+    # Мох на стене
+    moss_texture = pygame.Surface((32, 32), pygame.SRCALPHA)
+    for i in range(10):
+        x = random.randint(0, 31)
+        y = random.randint(0, 31)
+        size = random.randint(2, 5)
+        pygame.draw.circle(moss_texture, (0, 150, 0, 100), (x, y), size)
+    textures["moss"] = moss_texture
+    
     return textures
 
 def create_level(world, width, height):
@@ -64,7 +80,7 @@ def create_level(world, width, height):
     textures = get_textures()
     
     # Генерируем карту лабиринта
-    level_map = _generate_maze(width, height)
+    level_map = _generate_perfect_maze(width, height)
     
     # Создаем тайлы
     for y in range(height):
@@ -81,11 +97,19 @@ def create_level(world, width, height):
             # Определяем параметры тайла
             if tile_type == 1:  # Стена
                 texture = textures["wall"]
+                # Добавляем мох к некоторым стенам для разнообразия
+                if random.random() < 0.1:
+                    texture = texture.copy()
+                    texture.blit(textures["moss"], (0, 0))
                 walkable = False
                 layer = 1
                 tile_name = "wall"
             elif tile_type == 2:  # Пол
                 texture = textures["floor"]
+                # Добавляем трещины к некоторым плиткам пола для разнообразия
+                if random.random() < 0.05:
+                    texture = texture.copy()
+                    texture.blit(textures["crack"], (0, 0))
                 walkable = True
                 layer = 0
                 tile_name = "floor"
@@ -126,9 +150,190 @@ def create_level(world, width, height):
     
     return level_entities
 
+def _generate_perfect_maze(width, height):
+    """
+    Генерирует идеальный лабиринт с использованием алгоритма Recursive Backtracking
+    :param width: Ширина лабиринта
+    :param height: Высота лабиринта
+    :return: Двумерный массив с типами тайлов
+    """
+    # Убедимся, что размеры нечетные для правильной генерации лабиринта
+    if width % 2 == 0:
+        width += 1
+    if height % 2 == 0:
+        height += 1
+    
+    # Создаем карту, заполненную стенами
+    maze = [[1 for _ in range(width)] for _ in range(height)]
+    
+    # Функция для проверки, находится ли клетка в пределах лабиринта
+    def is_in_bounds(x, y):
+        return 0 <= x < width and 0 <= y < height
+    
+    # Функция для получения соседей клетки с шагом 2
+    def get_neighbors(x, y):
+        neighbors = []
+        directions = [(0, -2), (2, 0), (0, 2), (-2, 0)]  # Верх, право, низ, лево
+        random.shuffle(directions)
+        
+        for dx, dy in directions:
+            nx, ny = x + dx, y + dy
+            if is_in_bounds(nx, ny) and maze[ny][nx] == 1:  # Если сосед - стена
+                neighbors.append((nx, ny, x + dx//2, y + dy//2))  # (nx, ny, wx, wy) - координаты соседа и стены между ними
+        
+        return neighbors
+    
+    # Функция для рекурсивного прохода по лабиринту
+    def carve_passages_from(cx, cy):
+        maze[cy][cx] = 2  # Помечаем текущую клетку как проход
+        
+        neighbors = get_neighbors(cx, cy)
+        for nx, ny, wx, wy in neighbors:
+            if maze[ny][nx] == 1:  # Если сосед еще не посещен
+                maze[wy][wx] = 2  # Убираем стену между текущей клеткой и соседом
+                carve_passages_from(nx, ny)
+    
+    # Начинаем с случайной точки (с нечетными координатами)
+    start_x = random.randrange(1, width, 2)
+    start_y = random.randrange(1, height, 2)
+    
+    # Генерируем лабиринт
+    carve_passages_from(start_x, start_y)
+    
+    # Добавляем комнаты и расширяем некоторые коридоры
+    maze = _add_rooms_and_widen_corridors(maze, width, height)
+    
+    # Создаем вход и выход в лабиринте
+    # Ищем проходы по периметру для размещения входа и выхода
+    perimeter_passages = []
+    
+    # Верхняя и нижняя стороны
+    for x in range(1, width-1):
+        if maze[1][x] == 2:
+            perimeter_passages.append((x, 0))
+        if maze[height-2][x] == 2:
+            perimeter_passages.append((x, height-1))
+    
+    # Левая и правая стороны
+    for y in range(1, height-1):
+        if maze[y][1] == 2:
+            perimeter_passages.append((0, y))
+        if maze[y][width-2] == 2:
+            perimeter_passages.append((width-1, y))
+    
+    # Если не нашли проходы по периметру, создаем их
+    if not perimeter_passages:
+        # Создаем вход сверху
+        x = random.randrange(1, width-1, 2)
+        maze[0][x] = 2
+        maze[1][x] = 2
+        perimeter_passages.append((x, 0))
+        
+        # Создаем выход снизу
+        x = random.randrange(1, width-1, 2)
+        maze[height-1][x] = 2
+        maze[height-2][x] = 2
+        perimeter_passages.append((x, height-1))
+    
+    # Выбираем случайные точки для входа и выхода, но убедимся, что они находятся далеко друг от друга
+    entrance_candidates = []
+    exit_candidates = []
+    
+    # Разделяем перименты на две половины для входа и выхода
+    for pos in perimeter_passages:
+        x, y = pos
+        # Вход в верхней или левой части
+        if x < width // 2 or y < height // 2:
+            entrance_candidates.append(pos)
+        # Выход в нижней или правой части
+        else:
+            exit_candidates.append(pos)
+    
+    # Если какой-то из списков пуст, используем общий список
+    if not entrance_candidates:
+        entrance_candidates = perimeter_passages
+    if not exit_candidates:
+        exit_candidates = perimeter_passages
+    
+    # Выбираем случайные точки
+    entrance = random.choice(entrance_candidates)
+    exit_pos = random.choice(exit_candidates)
+    
+    # Отмечаем вход и выход
+    maze[entrance[1]][entrance[0]] = 3  # Вход
+    maze[exit_pos[1]][exit_pos[0]] = 4  # Выход
+    
+    return maze
+
+def _add_rooms_and_widen_corridors(maze, width, height):
+    """
+    Добавляет комнаты и расширяет коридоры в лабиринте
+    :param maze: Исходный лабиринт
+    :param width: Ширина лабиринта
+    :param height: Высота лабиринта
+    :return: Модифицированный лабиринт
+    """
+    # Создаем копию лабиринта
+    modified_maze = [row[:] for row in maze]
+    
+    # Добавляем комнаты
+    num_rooms = random.randint(3, 6)  # Случайное количество комнат
+    for _ in range(num_rooms):
+        # Случайный размер комнаты
+        room_width = random.randint(3, 7)
+        room_height = random.randint(3, 7)
+        
+        # Случайная позиция комнаты (не слишком близко к краям)
+        room_x = random.randint(2, width - room_width - 2)
+        room_y = random.randint(2, height - room_height - 2)
+        
+        # Создаем комнату
+        for y in range(room_y, room_y + room_height):
+            for x in range(room_x, room_x + room_width):
+                if 0 <= x < width and 0 <= y < height:
+                    modified_maze[y][x] = 2  # Проход
+    
+    # Расширяем коридоры
+    for y in range(1, height-1):
+        for x in range(1, width-1):
+            # Если текущая клетка - проход
+            if maze[y][x] == 2:
+                # Расширяем коридор в случайных направлениях
+                directions = [(0, -1), (1, 0), (0, 1), (-1, 0)]  # Верх, право, низ, лево
+                
+                # С некоторой вероятностью расширяем коридор
+                if random.random() < 0.3:
+                    # Выбираем случайное направление
+                    dx, dy = random.choice(directions)
+                    nx, ny = x + dx, y + dy
+                    
+                    # Проверяем, что не выходим за границы
+                    if 0 < nx < width-1 and 0 < ny < height-1:
+                        # Превращаем стену в проход
+                        modified_maze[ny][nx] = 2
+    
+    # Соединяем комнаты с основным лабиринтом
+    # Для этого проходим по всем стенам и с некоторой вероятностью превращаем их в проходы,
+    # если рядом есть как минимум два прохода
+    for y in range(1, height-1):
+        for x in range(1, width-1):
+            # Если текущая клетка - стена
+            if modified_maze[y][x] == 1:
+                # Проверяем соседние клетки
+                neighbors = [
+                    modified_maze[y-1][x], modified_maze[y+1][x],  # Верх, низ
+                    modified_maze[y][x-1], modified_maze[y][x+1]   # Лево, право
+                ]
+                
+                # Если рядом как минимум два прохода, с некоторой вероятностью превращаем стену в проход
+                if neighbors.count(2) >= 2 and random.random() < 0.3:
+                    modified_maze[y][x] = 2
+    
+    return modified_maze
+
 def _generate_maze(width, height):
     """
-    Генерирует лабиринт с использованием алгоритма Recursive Backtracking
+    Генерирует лабиринт с использованием алгоритма Recursive Backtracking (устаревший метод)
     :param width: Ширина лабиринта
     :param height: Высота лабиринта
     :return: Двумерный массив с типами тайлов

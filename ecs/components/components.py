@@ -4,7 +4,7 @@ class Component:
 
 class Position:
     """Компонент позиции"""
-    def __init__(self, x=0, y=0):
+    def __init__(self, x, y):
         self.x = x
         self.y = y
 
@@ -28,20 +28,19 @@ class Sprite:
 
 class Player:
     """Маркерный компонент для игрока"""
-    def __init__(self):
-        self.speed = 200  # Скорость движения
+    def __init__(self, speed=150):
+        self.speed = speed
         self.health = 100
         self.max_health = 100
 
 class Enemy:
     """Компонент для врагов"""
-    def __init__(self, type="basic", speed=100, health=30, damage=10):
-        self.type = type
+    def __init__(self, speed=100, damage=10, detection_radius=300, attack_radius=50, attack_rate=1.0):
         self.speed = speed
-        self.health = health
-        self.max_health = health
         self.damage = damage
-        self.detection_radius = 400  # Радиус обнаружения игрока
+        self.detection_radius = detection_radius
+        self.attack_radius = attack_radius
+        self.attack_rate = attack_rate
         self.attack_cooldown = 0
 
 class Collider:
@@ -53,16 +52,15 @@ class Collider:
 
 class Weapon:
     """Компонент для оружия"""
-    def __init__(self, type="pistol", damage=10, fire_rate=0.5, bullet_speed=500, ammo=12, max_ammo=12):
-        self.type = type
+    def __init__(self, damage=10, fire_rate=5, bullet_speed=400, max_ammo=30):
         self.damage = damage
-        self.fire_rate = fire_rate  # Выстрелов в секунду
+        self.fire_rate = fire_rate
         self.bullet_speed = bullet_speed
-        self.ammo = ammo
         self.max_ammo = max_ammo
+        self.ammo = max_ammo
         self.cooldown = 0
         self.is_reloading = False
-        self.reload_time = 1.0  # Время перезарядки в секундах
+        self.reload_time = 2.0
         self.reload_timer = 0
 
 class Bullet:
@@ -70,14 +68,17 @@ class Bullet:
     def __init__(self, owner_id, damage=10, lifetime=2.0):
         self.owner_id = owner_id
         self.damage = damage
-        self.lifetime = lifetime  # Время жизни пули в секундах
+        self.lifetime = lifetime
         self.timer = 0
 
 class Health:
     """Компонент здоровья"""
-    def __init__(self, value=100, max_value=100):
-        self.value = value
-        self.max_value = max_value
+    def __init__(self, maximum=100, current=100, regeneration_rate=0, regeneration_interval=1.0):
+        self.maximum = maximum
+        self.current = current
+        self.regeneration_rate = regeneration_rate
+        self.regeneration_interval = regeneration_interval
+        self.regeneration_timer = 0
         self.invulnerable = False
         self.invulnerable_timer = 0
 
@@ -90,6 +91,6 @@ class Camera:
 
 class Tile:
     """Компонент для тайлов уровня"""
-    def __init__(self, type="floor", walkable=True):
-        self.type = type
+    def __init__(self, name="floor", walkable=True):
+        self.name = name
         self.walkable = walkable 

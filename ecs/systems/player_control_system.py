@@ -2,6 +2,7 @@ import pygame
 import math
 from ecs.systems.system import System
 from ecs.components.components import Position, Velocity, Player, Weapon
+from ecs.systems.camera_system import CameraSystem
 
 class PlayerControlSystem(System):
     """Система для обработки пользовательского ввода и управления игроком"""
@@ -62,15 +63,22 @@ class PlayerControlSystem(System):
             if weapon.cooldown > 0:
                 weapon.cooldown -= dt
             
+            # Получаем смещение камеры
+            camera_offset = self._get_camera_offset()
+            
             # Обработка нажатия кнопки мыши для стрельбы
             mouse_buttons = pygame.mouse.get_pressed()
             if mouse_buttons[0] and weapon.cooldown <= 0 and not weapon.is_reloading and weapon.ammo > 0:
-                # Получаем позицию мыши
+                # Получаем позицию мыши в экранных координатах
                 mouse_pos = pygame.mouse.get_pos()
                 
+                # Преобразуем экранные координаты в мировые с учетом смещения камеры
+                world_mouse_x = mouse_pos[0] - camera_offset[0]
+                world_mouse_y = mouse_pos[1] - camera_offset[1]
+                
                 # Вычисляем направление стрельбы
-                dx = mouse_pos[0] - position.x
-                dy = mouse_pos[1] - position.y
+                dx = world_mouse_x - position.x
+                dy = world_mouse_y - position.y
                 
                 # Нормализуем направление
                 length = math.sqrt(dx ** 2 + dy ** 2)
@@ -105,6 +113,16 @@ class PlayerControlSystem(System):
         if weapon_system:
             weapon = self.world.get_component(player_id, Weapon)
             weapon_system.create_bullet(player_id, x, y, dx, dy, weapon.damage, weapon.bullet_speed)
+    
+    def _get_camera_offset(self):
+        """
+        Получает смещение камеры для преобразования координат
+        :return: Кортеж (offset_x, offset_y)
+        """
+        camera_system = next((system for system in self.world.systems if isinstance(system, CameraSystem)), None)
+        if camera_system:
+            return camera_system.get_camera_offset()
+        return (0, 0)
 
 # Импортируем WeaponSystem для создания пуль
 from ecs.systems.weapon_system import WeaponSystem 
