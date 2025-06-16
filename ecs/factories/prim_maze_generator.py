@@ -86,9 +86,9 @@ def generate_prim_maze(width, height, corridor_width=1):
     passage_count = sum(row.count(2) for row in maze)
     print(f"Стен: {wall_count}, Проходов: {passage_count}")
     
-    # Расширяем проходы для создания более широких коридоров
-    if corridor_width > 1:
-        maze = widen_corridors(maze, width, height, corridor_width)
+    # Пропускаем расширение коридоров, оставляем базовый лабиринт
+    # Добавляем комнаты в лабиринт
+    maze = add_rooms(maze, width, height, num_rooms=3, min_size=3, max_size=5)
     
     # Создаем вход и выход в лабиринте
     maze = add_entrance_exit(maze, width, height)
@@ -98,14 +98,14 @@ def generate_prim_maze(width, height, corridor_width=1):
 
 def widen_corridors(maze, width, height, corridor_width):
     """
-    Расширяет коридоры в лабиринте до указанной ширины, но сохраняет некоторые стены
+    Расширяет коридоры в лабиринте до указанной ширины, но сохраняет больше стен
     """
     print(f"Расширение коридоров до ширины {corridor_width}")
     
     # Создаем копию лабиринта
     wide_maze = [row[:] for row in maze]
     
-    # Ограничиваем ширину коридора, чтобы сохранить стены
+    # Ограничиваем ширину коридора
     corridor_width = min(corridor_width, 2)
     
     # Сначала отмечаем все проходы
@@ -115,17 +115,35 @@ def widen_corridors(maze, width, height, corridor_width):
             if maze[y][x] == 2:
                 passages.append((x, y))
     
-    # Теперь расширяем только отмеченные проходы
+    # Расширяем только по горизонтали и вертикали, не по диагонали
+    # Это создаст более структурированный лабиринт
     for x, y in passages:
-        # Расширяем проход в обе стороны, но только на 1 клетку
-        for dy in range(-1, 2):
-            for dx in range(-1, 2):
-                nx, ny = x + dx, y + dy
-                # Проверяем, что не выходим за границы
-                if 0 <= nx < width and 0 <= ny < height:
-                    # Не расширяем по диагонали (сохраняем больше стен)
-                    if dx == 0 or dy == 0:
+        # Расширяем проход только по основным направлениям
+        for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            nx, ny = x + dx, y + dy
+            # Проверяем, что не выходим за границы
+            if 0 <= nx < width and 0 <= ny < height:
+                # Расширяем только если это стена (не затрагиваем существующие проходы)
+                if maze[ny][nx] == 1:
+                    # Расширяем с вероятностью 70%, чтобы сохранить некоторые стены
+                    if random.random() < 0.7:
                         wide_maze[ny][nx] = 2
+    
+    # Убедимся, что внешние стены остаются стенами
+    for x in range(width):
+        wide_maze[0][x] = 1
+        wide_maze[height-1][x] = 1
+    for y in range(height):
+        wide_maze[y][0] = 1
+        wide_maze[y][width-1] = 1
+    
+    # Восстанавливаем вход и выход
+    for y in range(height):
+        for x in range(width):
+            if maze[y][x] == 3:  # Вход
+                wide_maze[y][x] = 3
+            elif maze[y][x] == 4:  # Выход
+                wide_maze[y][x] = 4
     
     # Подсчитываем количество проходов до и после расширения
     passages_before = sum(row.count(2) for row in maze)
@@ -135,6 +153,94 @@ def widen_corridors(maze, width, height, corridor_width):
     print(f"Стен после расширения: {walls_after}")
     
     return wide_maze
+
+def add_rooms(maze, width, height, num_rooms=3, min_size=3, max_size=5):
+    """
+    Добавляет комнаты в лабиринт
+    :param maze: Лабиринт
+    :param width: Ширина лабиринта
+    :param height: Высота лабиринта
+    :param num_rooms: Количество комнат
+    :param min_size: Минимальный размер комнаты
+    :param max_size: Максимальный размер комнаты
+    :return: Лабиринт с комнатами
+    """
+    print(f"Добавление {num_rooms} комнат размером от {min_size}x{min_size} до {max_size}x{max_size}")
+    
+    # Создаем копию лабиринта
+    modified_maze = [row[:] for row in maze]
+    
+    # Делим лабиринт на секторы для более равномерного распределения комнат
+    sector_width = width // 3
+    sector_height = height // 3
+    
+    rooms_added = 0
+    
+    # Пытаемся добавить комнату в каждый сектор
+    for sector_y in range(3):
+        for sector_x in range(3):
+            if rooms_added >= num_rooms:
+                break
+                
+            # Определяем границы сектора
+            start_x = sector_x * sector_width + 2
+            start_y = sector_y * sector_height + 2
+            end_x = min((sector_x + 1) * sector_width - 2, width - 2)
+            end_y = min((sector_y + 1) * sector_height - 2, height - 2)
+            
+            # Если сектор слишком маленький, пропускаем его
+            if end_x - start_x < min_size + 2 or end_y - start_y < min_size + 2:
+                continue
+                
+            # Случайный размер комнаты (меньше, чем раньше)
+            room_width = min(random.randint(min_size, max_size), end_x - start_x)
+            room_height = min(random.randint(min_size, max_size), end_y - start_y)
+            
+            # Случайная позиция комнаты в пределах сектора
+            room_x = random.randint(start_x, end_x - room_width)
+            room_y = random.randint(start_y, end_y - room_height)
+            
+            # Создаем комнату
+            for y in range(room_y, room_y + room_height):
+                for x in range(room_x, room_x + room_width):
+                    if 0 <= y < height and 0 <= x < width:
+                        modified_maze[y][x] = 2  # Проход
+            
+            # Соединяем комнату с основным лабиринтом
+            # Выбираем случайную сторону комнаты
+            side = random.randint(0, 3)  # 0 - верх, 1 - право, 2 - низ, 3 - лево
+            
+            # Создаем проход от комнаты к ближайшему коридору
+            if side == 0:  # Верх
+                x = random.randint(room_x, room_x + room_width - 1)
+                for y in range(room_y - 1, 0, -1):
+                    modified_maze[y][x] = 2  # Проход
+                    if y > 0 and modified_maze[y-1][x] == 2:
+                        break  # Нашли существующий проход
+            elif side == 1:  # Право
+                y = random.randint(room_y, room_y + room_height - 1)
+                for x in range(room_x + room_width, width - 1):
+                    modified_maze[y][x] = 2  # Проход
+                    if x < width - 1 and modified_maze[y][x+1] == 2:
+                        break  # Нашли существующий проход
+            elif side == 2:  # Низ
+                x = random.randint(room_x, room_x + room_width - 1)
+                for y in range(room_y + room_height, height - 1):
+                    modified_maze[y][x] = 2  # Проход
+                    if y < height - 1 and modified_maze[y+1][x] == 2:
+                        break  # Нашли существующий проход
+            else:  # Лево
+                y = random.randint(room_y, room_y + room_height - 1)
+                for x in range(room_x - 1, 0, -1):
+                    modified_maze[y][x] = 2  # Проход
+                    if x > 0 and modified_maze[y][x-1] == 2:
+                        break  # Нашли существующий проход
+            
+            rooms_added += 1
+            print(f"Добавлена комната {rooms_added}: позиция ({room_x}, {room_y}), размер {room_width}x{room_height}")
+    
+    print(f"Добавлено всего {rooms_added} комнат")
+    return modified_maze
 
 def add_entrance_exit(maze, width, height):
     """

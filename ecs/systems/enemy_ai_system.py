@@ -1,16 +1,48 @@
 import math
 import pygame
+import random
 from ecs.systems.system import System
 from ecs.components.components import Position, Velocity, Enemy, Player, Health, Weapon
+from ecs.pathfinding.dijkstra import DijkstraPathfinder
 
 class EnemyAISystem(System):
     """Система для управления искусственным интеллектом врагов"""
+    
+    def __init__(self, world):
+        super().__init__(world)
+        self.pathfinder = None
+        self.level_map = None
+        self.map_width = 0
+        self.map_height = 0
+        self.path_update_timer = 0
+        self.path_update_interval = 0.5  # Обновляем путь каждые 0.5 секунды
+        self.enemy_paths = {}  # Словарь для хранения путей врагов
+    
+    def set_level_map(self, level_map, width, height):
+        """
+        Устанавливает карту уровня для поиска пути
+        :param level_map: Карта уровня
+        :param width: Ширина карты
+        :param height: Высота карты
+        """
+        self.level_map = level_map
+        self.map_width = width
+        self.map_height = height
+        self.pathfinder = DijkstraPathfinder(level_map, width, height)
     
     def update(self, dt):
         """
         Обновляет поведение врагов
         :param dt: Время, прошедшее с последнего обновления (в секундах)
         """
+        # Если карта не установлена, ничего не делаем
+        if not self.pathfinder:
+            return
+        
+        # Обновляем таймер для пересчета путей
+        self.path_update_timer += dt
+        should_update_paths = self.path_update_timer >= self.path_update_interval
+        
         # Получаем всех врагов
         enemy_entities = self.world.get_entities_with_components(Enemy, Position, Velocity)
         
@@ -23,28 +55,67 @@ class EnemyAISystem(System):
         player_id = player_entities[0]
         player_pos = self.world.get_component(player_id, Position)
         
+        # Если нужно обновить пути
+        if should_update_paths:
+            self.path_update_timer = 0
+            # Очищаем старые пути
+            self.enemy_paths.clear()
+        
         # Обновляем поведение каждого врага
         for enemy_id in enemy_entities:
             enemy = self.world.get_component(enemy_id, Enemy)
             enemy_pos = self.world.get_component(enemy_id, Position)
             enemy_vel = self.world.get_component(enemy_id, Velocity)
             
-            # Вычисляем направление к игроку
+            # Вычисляем расстояние до игрока (по прямой)
             dx = player_pos.x - enemy_pos.x
             dy = player_pos.y - enemy_pos.y
             distance = math.sqrt(dx * dx + dy * dy)
             
             # Обновляем состояние врага
             if distance < enemy.detection_radius:
-                # Если игрок в зоне обнаружения, преследуем его
-                if distance > 0:
+                # Если игрок в зоне обнаружения, используем поиск пути
+                
+                # Если нужно обновить путь или у этого врага еще нет пути
+                if should_update_paths or enemy_id not in self.enemy_paths:
+                    # Находим путь к игроку
+                    path = self._find_path(enemy_pos.x, enemy_pos.y, player_pos.x, player_pos.y)
+                    self.enemy_paths[enemy_id] = path
+                
+                # Если у врага есть путь
+                if enemy_id in self.enemy_paths and self.enemy_paths[enemy_id]:
+                    path = self.enemy_paths[enemy_id]
+                    
+                    # Берем следующую точку пути
+                    next_point = path[0]
+                    
+                    # Вычисляем направление к следующей точке
+                    dx = next_point[0] - enemy_pos.x
+                    dy = next_point[1] - enemy_pos.y
+                    point_distance = math.sqrt(dx * dx + dy * dy)
+                    
+                    # Если достигли точки, удаляем её из пути
+                    if point_distance < 5:
+                        if len(path) > 1:
+                            self.enemy_paths[enemy_id] = path[1:]
+                        else:
+                            self.enemy_paths[enemy_id] = []
+                    
                     # Нормализуем вектор направления
-                    dx /= distance
-                    dy /= distance
+                    if point_distance > 0:
+                        dx /= point_distance
+                        dy /= point_distance
                     
                     # Устанавливаем скорость врага
                     enemy_vel.dx = dx * enemy.speed
                     enemy_vel.dy = dy * enemy.speed
+                else:
+                    # Если пути нет, двигаемся напрямую к игроку
+                    if distance > 0:
+                        dx = (player_pos.x - enemy_pos.x) / distance
+                        dy = (player_pos.y - enemy_pos.y) / distance
+                        enemy_vel.dx = dx * enemy.speed
+                        enemy_vel.dy = dy * enemy.speed
                 
                 # Если враг достаточно близко к игроку, атакуем
                 if distance < enemy.attack_radius and enemy.attack_cooldown <= 0:
@@ -56,6 +127,7 @@ class EnemyAISystem(System):
                     enemy.attack_cooldown -= dt
             else:
                 # Если игрок вне зоны обнаружения, патрулируем или стоим на месте
+                # Для простоты просто останавливаемся
                 enemy_vel.dx = 0
                 enemy_vel.dy = 0
     
@@ -82,13 +154,13 @@ class EnemyAISystem(System):
     
     def _find_path(self, start_x, start_y, target_x, target_y):
         """
-        Находит путь от начальной точки к целевой
+        Находит путь от начальной точки к целевой используя алгоритм Дейкстры
         :param start_x: Начальная координата X
         :param start_y: Начальная координата Y
         :param target_x: Целевая координата X
         :param target_y: Целевая координата Y
         :return: Список точек пути
         """
-        # Для простоты используем прямую линию
-        # В более сложной реализации здесь можно использовать A* или другой алгоритм поиска пути
-        return [(target_x, target_y)] 
+        if self.pathfinder:
+            return self.pathfinder.find_path(start_x, start_y, target_x, target_y)
+        return [(target_x, target_y)]  # Если pathfinder не инициализирован, возвращаем прямой путь 

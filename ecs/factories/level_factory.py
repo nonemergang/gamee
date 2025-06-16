@@ -82,8 +82,13 @@ def create_level(world, width, height):
     textures = get_textures()
     
     # Генерируем карту лабиринта с использованием алгоритма Прима
-    # Используем ширину коридора 1, чтобы сохранить больше стен
+    # Используем базовый лабиринт без расширения коридоров
     level_map = generate_prim_maze(width, height, corridor_width=1)
+    
+    # Передаем карту уровня в систему ИИ врагов
+    enemy_ai_system = next((system for system in world.systems if hasattr(system, 'set_level_map')), None)
+    if enemy_ai_system:
+        enemy_ai_system.set_level_map(level_map, width, height)
     
     # Подсчитываем типы тайлов в карте
     wall_count = sum(row.count(1) for row in level_map)

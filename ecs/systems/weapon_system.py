@@ -5,7 +5,7 @@ from ecs.components.components import Position, Velocity, Bullet, Sprite, Collid
 
 def create_bullet_texture():
     """Создает текстуру пули"""
-    size = 8
+    size = 6
     texture = pygame.Surface((size, size), pygame.SRCALPHA)
     
     # Основная пуля (желтая)
@@ -16,8 +16,8 @@ def create_bullet_texture():
     
     # Эффект свечения
     glow = pygame.Surface((size*2, size*2), pygame.SRCALPHA)
-    for i in range(5):
-        alpha = 100 - i * 20
+    for i in range(4):
+        alpha = 100 - i * 25
         radius = size//2 + i
         pygame.draw.circle(glow, (255, 255, 0, alpha), (size, size), radius)
     
@@ -105,12 +105,13 @@ class WeaponSystem(System):
         self.world.add_component(bullet_id, Bullet(owner_id, damage))
         self.world.add_component(bullet_id, Position(x, y))
         self.world.add_component(bullet_id, Velocity(dx * speed, dy * speed))
+        self.world.add_component(bullet_id, Collider(width=8, height=8))  # Добавляем коллайдер для пули
         
         # Вычисляем угол поворота для спрайта
         angle = math.degrees(math.atan2(dy, dx))
         
         # Добавляем спрайт для отрисовки с текстурой
-        sprite = Sprite(image=self.bullet_texture, width=16, height=16, layer=5)
+        sprite = Sprite(image=self.bullet_texture, width=12, height=12, layer=5)
         sprite.angle = angle  # Поворачиваем пулю в направлении движения
         self.world.add_component(bullet_id, sprite)
         

@@ -3,7 +3,7 @@ from ecs.components.components import Position, Velocity, Player, Sprite, Collid
 
 def create_player_texture():
     """Создает текстуру игрока"""
-    size = 32
+    size = 24
     texture = pygame.Surface((size, size), pygame.SRCALPHA)
     
     # Основное тело (синее)
@@ -44,8 +44,8 @@ def create_player(world, x, y):
     world.add_component(player_id, Position(x, y))
     world.add_component(player_id, Velocity())
     world.add_component(player_id, Player(speed=150))
-    world.add_component(player_id, Sprite(image=player_texture, width=32, height=32, layer=4))
-    world.add_component(player_id, Collider(width=28, height=28))
+    world.add_component(player_id, Sprite(image=player_texture, width=24, height=24, layer=4))
+    world.add_component(player_id, Collider(width=20, height=20))
     world.add_component(player_id, Health(maximum=100, current=100, regeneration_rate=5, regeneration_interval=3.0))
     world.add_component(player_id, Weapon(damage=20, fire_rate=5, bullet_speed=400, max_ammo=30))
     
