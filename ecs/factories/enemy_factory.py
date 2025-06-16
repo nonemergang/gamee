@@ -1,30 +1,12 @@
 import pygame
 from ecs.components.components import Position, Velocity, Enemy, Sprite, Collider, Health
+from ecs.utils.sprite_manager import sprite_manager
 
 def create_enemy_texture():
-    """Создает текстуру врага"""
-    size = 32
-    texture = pygame.Surface((size, size), pygame.SRCALPHA)
-    
-    # Основное тело (красное)
-    pygame.draw.circle(texture, (200, 50, 50), (size//2, size//2), size//2)
-    
-    # Глаза (белые с черными зрачками)
-    eye_size = size // 6
-    eye_offset = size // 4
-    
-    # Левый глаз
-    pygame.draw.circle(texture, (255, 255, 255), (size//2 - eye_offset, size//2 - eye_offset), eye_size)
-    pygame.draw.circle(texture, (0, 0, 0), (size//2 - eye_offset, size//2 - eye_offset), eye_size // 2)
-    
-    # Правый глаз
-    pygame.draw.circle(texture, (255, 255, 255), (size//2 + eye_offset, size//2 - eye_offset), eye_size)
-    pygame.draw.circle(texture, (0, 0, 0), (size//2 + eye_offset, size//2 - eye_offset), eye_size // 2)
-    
-    # Рот (черный)
-    pygame.draw.arc(texture, (0, 0, 0), (size//4, size//2, size//2, size//2), 0, 3.14, 2)
-    
-    return texture
+    """
+    Возвращает текстуру врага из менеджера спрайтов или создает дефолтную
+    """
+    return sprite_manager.get_sprite("enemy")
 
 def create_enemy(world, x, y, enemy_type="basic"):
     """
@@ -46,6 +28,7 @@ def create_enemy(world, x, y, enemy_type="basic"):
         detection_radius = 400
         attack_radius = 40
         color = (255, 100, 100)
+        sprite_name = "enemy_fast"
     elif enemy_type == "tank":
         speed = 80
         damage = 20
@@ -53,6 +36,7 @@ def create_enemy(world, x, y, enemy_type="basic"):
         detection_radius = 300
         attack_radius = 60
         color = (150, 50, 50)
+        sprite_name = "enemy_tank"
     else:  # basic
         speed = 100
         damage = 10
@@ -60,9 +44,14 @@ def create_enemy(world, x, y, enemy_type="basic"):
         detection_radius = 350
         attack_radius = 50
         color = (200, 50, 50)
+        sprite_name = "enemy"
     
-    # Создаем текстуру врага
-    enemy_texture = create_enemy_texture()
+    # Пытаемся получить специфичный спрайт для типа врага
+    enemy_texture = sprite_manager.get_sprite(sprite_name)
+    
+    # Если не нашли специфичный спрайт, используем дефолтный
+    if enemy_texture is None:
+        enemy_texture = create_enemy_texture()
     
     # Добавляем компоненты
     world.add_component(enemy_id, Position(x, y))

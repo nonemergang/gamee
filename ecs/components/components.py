@@ -13,6 +13,23 @@ class Velocity:
     def __init__(self, dx=0, dy=0):
         self.dx = dx
         self.dy = dy
+        
+    # Свойства для совместимости с кодом, использующим x и y вместо dx и dy
+    @property
+    def x(self):
+        return self.dx
+        
+    @x.setter
+    def x(self, value):
+        self.dx = value
+        
+    @property
+    def y(self):
+        return self.dy
+        
+    @y.setter
+    def y(self, value):
+        self.dy = value
 
 class Sprite:
     """Компонент для отображения спрайта"""
@@ -57,7 +74,7 @@ class Weapon:
         self.fire_rate = fire_rate
         self.bullet_speed = bullet_speed
         self.max_ammo = max_ammo
-        self.ammo = max_ammo
+        self.current_ammo = max_ammo  # Текущее количество патронов
         self.cooldown = 0
         self.is_reloading = False
         self.reload_time = 2.0
@@ -65,10 +82,11 @@ class Weapon:
 
 class Bullet:
     """Компонент для пуль"""
-    def __init__(self, owner_id, damage=10, lifetime=2.0):
-        self.owner_id = owner_id
+    def __init__(self, owner=None, damage=10, radius=4, lifetime=2.0):
+        self.owner = owner  # ID владельца пули
         self.damage = damage
-        self.lifetime = lifetime
+        self.radius = radius  # Радиус пули для проверки столкновений
+        self.lifetime = lifetime  # Время жизни пули в секундах
         self.timer = 0
 
 class Health:
@@ -93,4 +111,10 @@ class Tile:
     """Компонент для тайлов уровня"""
     def __init__(self, name="floor", walkable=True):
         self.name = name
-        self.walkable = walkable 
+        self.walkable = walkable
+
+class PathDebug:
+    """Компонент для отображения пути"""
+    def __init__(self, path=None):
+        self.path = path or []  # Список точек пути [(x1, y1), (x2, y2), ...]
+        self.visible = True  # Флаг видимости пути 

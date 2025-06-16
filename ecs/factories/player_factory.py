@@ -1,30 +1,12 @@
 import pygame
 from ecs.components.components import Position, Velocity, Player, Sprite, Collider, Health, Weapon
+from ecs.utils.sprite_manager import sprite_manager
 
 def create_player_texture():
-    """Создает текстуру игрока"""
-    size = 24
-    texture = pygame.Surface((size, size), pygame.SRCALPHA)
-    
-    # Основное тело (синее)
-    pygame.draw.circle(texture, (50, 100, 200), (size//2, size//2), size//2)
-    
-    # Глаза (белые с черными зрачками)
-    eye_size = size // 6
-    eye_offset = size // 4
-    
-    # Левый глаз
-    pygame.draw.circle(texture, (255, 255, 255), (size//2 - eye_offset, size//2 - eye_offset), eye_size)
-    pygame.draw.circle(texture, (0, 0, 0), (size//2 - eye_offset, size//2 - eye_offset), eye_size // 2)
-    
-    # Правый глаз
-    pygame.draw.circle(texture, (255, 255, 255), (size//2 + eye_offset, size//2 - eye_offset), eye_size)
-    pygame.draw.circle(texture, (0, 0, 0), (size//2 + eye_offset, size//2 - eye_offset), eye_size // 2)
-    
-    # Рот (черный)
-    pygame.draw.arc(texture, (0, 0, 0), (size//4, size//2, size//2, size//2), 0, 3.14, 2)
-    
-    return texture
+    """
+    Возвращает текстуру игрока из менеджера спрайтов или создает дефолтную
+    """
+    return sprite_manager.get_sprite("player")
 
 def create_player(world, x, y):
     """
@@ -37,7 +19,7 @@ def create_player(world, x, y):
     # Создаем сущность
     player_id = world.create_entity()
     
-    # Создаем текстуру игрока
+    # Получаем текстуру игрока
     player_texture = create_player_texture()
     
     # Добавляем компоненты

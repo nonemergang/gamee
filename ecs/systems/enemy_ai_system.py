@@ -2,7 +2,7 @@ import math
 import pygame
 import random
 from ecs.systems.system import System
-from ecs.components.components import Position, Velocity, Enemy, Player, Health, Weapon
+from ecs.components.components import Position, Velocity, Enemy, Player, Health, Weapon, PathDebug
 from ecs.pathfinding.dijkstra import DijkstraPathfinder
 
 class EnemyAISystem(System):
@@ -17,6 +17,7 @@ class EnemyAISystem(System):
         self.path_update_timer = 0
         self.path_update_interval = 0.5  # Обновляем путь каждые 0.5 секунды
         self.enemy_paths = {}  # Словарь для хранения путей врагов
+        self.debug_mode = False  # Отключаем режим отладки для отображения путей
     
     def set_level_map(self, level_map, width, height):
         """
@@ -81,6 +82,14 @@ class EnemyAISystem(System):
                     # Находим путь к игроку
                     path = self._find_path(enemy_pos.x, enemy_pos.y, player_pos.x, player_pos.y)
                     self.enemy_paths[enemy_id] = path
+                    
+                    # Обновляем или добавляем компонент PathDebug для отображения пути
+                    if self.debug_mode:
+                        if self.world.has_component(enemy_id, PathDebug):
+                            path_debug = self.world.get_component(enemy_id, PathDebug)
+                            path_debug.path = path
+                        else:
+                            self.world.add_component(enemy_id, PathDebug(path))
                 
                 # Если у врага есть путь
                 if enemy_id in self.enemy_paths and self.enemy_paths[enemy_id]:
@@ -98,8 +107,16 @@ class EnemyAISystem(System):
                     if point_distance < 5:
                         if len(path) > 1:
                             self.enemy_paths[enemy_id] = path[1:]
+                            # Обновляем компонент PathDebug
+                            if self.debug_mode and self.world.has_component(enemy_id, PathDebug):
+                                path_debug = self.world.get_component(enemy_id, PathDebug)
+                                path_debug.path = path[1:]
                         else:
                             self.enemy_paths[enemy_id] = []
+                            # Очищаем путь в компоненте PathDebug
+                            if self.debug_mode and self.world.has_component(enemy_id, PathDebug):
+                                path_debug = self.world.get_component(enemy_id, PathDebug)
+                                path_debug.path = []
                     
                     # Нормализуем вектор направления
                     if point_distance > 0:
@@ -130,6 +147,15 @@ class EnemyAISystem(System):
                 # Для простоты просто останавливаемся
                 enemy_vel.dx = 0
                 enemy_vel.dy = 0
+                
+                # Очищаем путь
+                if enemy_id in self.enemy_paths:
+                    self.enemy_paths[enemy_id] = []
+                
+                # Очищаем компонент PathDebug
+                if self.debug_mode and self.world.has_component(enemy_id, PathDebug):
+                    path_debug = self.world.get_component(enemy_id, PathDebug)
+                    path_debug.path = []
     
     def _attack_player(self, enemy_id, player_id):
         """

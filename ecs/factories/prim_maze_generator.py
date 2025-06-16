@@ -175,69 +175,87 @@ def add_rooms(maze, width, height, num_rooms=3, min_size=3, max_size=5):
     sector_height = height // 3
     
     rooms_added = 0
+    attempts = 0
+    max_attempts = 50  # Максимальное количество попыток добавить комнаты
     
-    # Пытаемся добавить комнату в каждый сектор
-    for sector_y in range(3):
-        for sector_x in range(3):
-            if rooms_added >= num_rooms:
+    # Пытаемся добавить комнаты
+    while rooms_added < num_rooms and attempts < max_attempts:
+        attempts += 1
+        
+        # Выбираем случайный сектор
+        sector_x = random.randint(0, 2)
+        sector_y = random.randint(0, 2)
+        
+        # Определяем границы сектора с отступами от края
+        start_x = sector_x * sector_width + 2
+        start_y = sector_y * sector_height + 2
+        end_x = min((sector_x + 1) * sector_width - 2, width - 2)
+        end_y = min((sector_y + 1) * sector_height - 2, height - 2)
+        
+        # Если сектор слишком маленький, пропускаем его
+        if end_x - start_x < min_size + 2 or end_y - start_y < min_size + 2:
+            continue
+        
+        # Случайный размер комнаты
+        room_width = min(random.randint(min_size, max_size), end_x - start_x)
+        room_height = min(random.randint(min_size, max_size), end_y - start_y)
+        
+        # Случайная позиция комнаты в пределах сектора
+        room_x = random.randint(start_x, end_x - room_width)
+        room_y = random.randint(start_y, end_y - room_height)
+        
+        # Проверяем, что комната не пересекается с другими комнатами
+        # Для простоты просто проверяем, что в этом месте есть хотя бы одна стена
+        has_wall = False
+        for y in range(room_y, room_y + room_height):
+            for x in range(room_x, room_x + room_width):
+                if modified_maze[y][x] == 1:  # Если есть стена
+                    has_wall = True
+                    break
+            if has_wall:
                 break
-                
-            # Определяем границы сектора
-            start_x = sector_x * sector_width + 2
-            start_y = sector_y * sector_height + 2
-            end_x = min((sector_x + 1) * sector_width - 2, width - 2)
-            end_y = min((sector_y + 1) * sector_height - 2, height - 2)
-            
-            # Если сектор слишком маленький, пропускаем его
-            if end_x - start_x < min_size + 2 or end_y - start_y < min_size + 2:
-                continue
-                
-            # Случайный размер комнаты (меньше, чем раньше)
-            room_width = min(random.randint(min_size, max_size), end_x - start_x)
-            room_height = min(random.randint(min_size, max_size), end_y - start_y)
-            
-            # Случайная позиция комнаты в пределах сектора
-            room_x = random.randint(start_x, end_x - room_width)
-            room_y = random.randint(start_y, end_y - room_height)
-            
-            # Создаем комнату
-            for y in range(room_y, room_y + room_height):
-                for x in range(room_x, room_x + room_width):
-                    if 0 <= y < height and 0 <= x < width:
-                        modified_maze[y][x] = 2  # Проход
-            
-            # Соединяем комнату с основным лабиринтом
-            # Выбираем случайную сторону комнаты
-            side = random.randint(0, 3)  # 0 - верх, 1 - право, 2 - низ, 3 - лево
-            
-            # Создаем проход от комнаты к ближайшему коридору
-            if side == 0:  # Верх
-                x = random.randint(room_x, room_x + room_width - 1)
-                for y in range(room_y - 1, 0, -1):
+        
+        if not has_wall:
+            continue  # Если нет стен, значит комната уже есть или это проход
+        
+        # Создаем комнату
+        for y in range(room_y, room_y + room_height):
+            for x in range(room_x, room_x + room_width):
+                if 0 <= y < height and 0 <= x < width:
                     modified_maze[y][x] = 2  # Проход
-                    if y > 0 and modified_maze[y-1][x] == 2:
-                        break  # Нашли существующий проход
-            elif side == 1:  # Право
-                y = random.randint(room_y, room_y + room_height - 1)
-                for x in range(room_x + room_width, width - 1):
-                    modified_maze[y][x] = 2  # Проход
-                    if x < width - 1 and modified_maze[y][x+1] == 2:
-                        break  # Нашли существующий проход
-            elif side == 2:  # Низ
-                x = random.randint(room_x, room_x + room_width - 1)
-                for y in range(room_y + room_height, height - 1):
-                    modified_maze[y][x] = 2  # Проход
-                    if y < height - 1 and modified_maze[y+1][x] == 2:
-                        break  # Нашли существующий проход
-            else:  # Лево
-                y = random.randint(room_y, room_y + room_height - 1)
-                for x in range(room_x - 1, 0, -1):
-                    modified_maze[y][x] = 2  # Проход
-                    if x > 0 and modified_maze[y][x-1] == 2:
-                        break  # Нашли существующий проход
-            
-            rooms_added += 1
-            print(f"Добавлена комната {rooms_added}: позиция ({room_x}, {room_y}), размер {room_width}x{room_height}")
+        
+        # Соединяем комнату с основным лабиринтом
+        # Выбираем случайную сторону комнаты
+        side = random.randint(0, 3)  # 0 - верх, 1 - право, 2 - низ, 3 - лево
+        
+        # Создаем проход от комнаты к ближайшему коридору
+        if side == 0:  # Верх
+            x = random.randint(room_x, room_x + room_width - 1)
+            for y in range(room_y - 1, 0, -1):
+                modified_maze[y][x] = 2  # Проход
+                if y > 0 and modified_maze[y-1][x] == 2:
+                    break  # Нашли существующий проход
+        elif side == 1:  # Право
+            y = random.randint(room_y, room_y + room_height - 1)
+            for x in range(room_x + room_width, width - 1):
+                modified_maze[y][x] = 2  # Проход
+                if x < width - 1 and modified_maze[y][x+1] == 2:
+                    break  # Нашли существующий проход
+        elif side == 2:  # Низ
+            x = random.randint(room_x, room_x + room_width - 1)
+            for y in range(room_y + room_height, height - 1):
+                modified_maze[y][x] = 2  # Проход
+                if y < height - 1 and modified_maze[y+1][x] == 2:
+                    break  # Нашли существующий проход
+        else:  # Лево
+            y = random.randint(room_y, room_y + room_height - 1)
+            for x in range(room_x - 1, 0, -1):
+                modified_maze[y][x] = 2  # Проход
+                if x > 0 and modified_maze[y][x-1] == 2:
+                    break  # Нашли существующий проход
+        
+        rooms_added += 1
+        print(f"Добавлена комната {rooms_added}: позиция ({room_x}, {room_y}), размер {room_width}x{room_height}")
     
     print(f"Добавлено всего {rooms_added} комнат")
     return modified_maze

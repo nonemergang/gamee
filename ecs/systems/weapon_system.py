@@ -2,77 +2,57 @@ import pygame
 import math
 from ecs.systems.system import System
 from ecs.components.components import Position, Velocity, Bullet, Sprite, Collider, Tile
+from ecs.utils.sprite_manager import sprite_manager
 
 def create_bullet_texture():
-    """Создает текстуру пули"""
-    size = 6
-    texture = pygame.Surface((size, size), pygame.SRCALPHA)
-    
-    # Основная пуля (желтая)
-    pygame.draw.circle(texture, (255, 255, 0), (size//2, size//2), size//2)
-    
-    # Внутренняя часть (более яркая)
-    pygame.draw.circle(texture, (255, 255, 200), (size//2, size//2), size//4)
-    
-    # Эффект свечения
-    glow = pygame.Surface((size*2, size*2), pygame.SRCALPHA)
-    for i in range(4):
-        alpha = 100 - i * 25
-        radius = size//2 + i
-        pygame.draw.circle(glow, (255, 255, 0, alpha), (size, size), radius)
-    
-    # Объединяем основную пулю и свечение
-    final_texture = pygame.Surface((size*2, size*2), pygame.SRCALPHA)
-    final_texture.blit(glow, (0, 0))
-    final_texture.blit(texture, (size - size//2, size - size//2))
-    
-    return final_texture
+    """
+    Возвращает текстуру пули из менеджера спрайтов или создает дефолтную
+    """
+    return sprite_manager.get_sprite("bullet")
 
 class WeaponSystem(System):
     """Система для обработки оружия и пуль"""
     
     def __init__(self, world):
         super().__init__(world)
-        self.bullet_texture = create_bullet_texture()
+        self.bullet_cooldown = {}  # Словарь для отслеживания перезарядки оружия
+        self.reload_status = {}    # Словарь для отслеживания статуса перезарядки
     
     def update(self, dt):
         """
         Обновляет состояние пуль
         :param dt: Время, прошедшее с последнего обновления (в секундах)
         """
+        # Обновляем таймеры перезарядки
+        for entity_id, cooldown in list(self.bullet_cooldown.items()):
+            self.bullet_cooldown[entity_id] = max(0, cooldown - dt)
+        
+        # Обновляем статусы перезарядки
+        for entity_id in list(self.reload_status.keys()):
+            if not self.world.has_component(entity_id, "Weapon"):
+                del self.reload_status[entity_id]
+                continue
+                
+            weapon = self.world.get_component(entity_id, "Weapon")
+            reload_time = self.reload_status[entity_id]
+            
+            if reload_time > 0:
+                self.reload_status[entity_id] = max(0, reload_time - dt)
+                if self.reload_status[entity_id] == 0:
+                    weapon.current_ammo = weapon.max_ammo
+                    print(f"Перезарядка завершена, патронов: {weapon.current_ammo}")
+        
         # Получаем все сущности с пулями
         bullet_entities = self.world.get_entities_with_components(Bullet, Position)
         
-        # Получаем все стены для проверки столкновений
-        wall_entities = []
-        tile_entities = self.world.get_entities_with_components(Tile, Position, Collider)
-        for tile_id in tile_entities:
-            tile = self.world.get_component(tile_id, Tile)
-            if not tile.walkable:  # Если тайл непроходимый (стена)
-                wall_entities.append(tile_id)
-        
         for bullet_id in bullet_entities:
             bullet = self.world.get_component(bullet_id, Bullet)
-            bullet_pos = self.world.get_component(bullet_id, Position)
-            bullet_collider = self.world.get_component(bullet_id, Collider)
             
-            # Обновляем время жизни пули
+            # Проверяем время жизни пули
             bullet.timer += dt
-            
-            # Если время жизни пули истекло, удаляем её
             if bullet.timer >= bullet.lifetime:
                 self.world.delete_entity(bullet_id)
                 continue
-            
-            # Проверяем столкновения пули со стенами
-            for wall_id in wall_entities:
-                wall_pos = self.world.get_component(wall_id, Position)
-                wall_collider = self.world.get_component(wall_id, Collider)
-                
-                # Проверяем столкновение
-                if self._check_collision(bullet_pos, bullet_collider, wall_pos, wall_collider):
-                    self.world.delete_entity(bullet_id)
-                    break
     
     def create_bullet(self, owner_id, x, y, dx, dy, damage, speed):
         """
@@ -102,21 +82,25 @@ class WeaponSystem(System):
         y += dy * offset
         
         # Добавляем компоненты
-        self.world.add_component(bullet_id, Bullet(owner_id, damage))
+        self.world.add_component(bullet_id, Bullet(owner=owner_id, damage=damage, radius=4, lifetime=2.0))
         self.world.add_component(bullet_id, Position(x, y))
         self.world.add_component(bullet_id, Velocity(dx * speed, dy * speed))
-        self.world.add_component(bullet_id, Collider(width=8, height=8))  # Добавляем коллайдер для пули
         
         # Вычисляем угол поворота для спрайта
         angle = math.degrees(math.atan2(dy, dx))
         
+        # Получаем текстуру пули
+        bullet_texture = create_bullet_texture()
+        
         # Добавляем спрайт для отрисовки с текстурой
-        sprite = Sprite(image=self.bullet_texture, width=12, height=12, layer=5)
+        sprite = Sprite(image=bullet_texture, width=12, height=12, layer=5)
         sprite.angle = angle  # Поворачиваем пулю в направлении движения
         self.world.add_component(bullet_id, sprite)
         
         # Добавляем коллайдер для обнаружения столкновений
         self.world.add_component(bullet_id, Collider(width=8, height=8, is_trigger=True))
+        
+        print(f"Создана пуля ID:{bullet_id} в позиции ({x:.1f}, {y:.1f}) со скоростью ({dx * speed:.1f}, {dy * speed:.1f})")
         
         return bullet_id
     
@@ -147,4 +131,78 @@ class WeaponSystem(System):
         
         # Проверяем пересечение (AABB коллизия)
         return (left1 < right2 and right1 > left2 and
-                top1 < bottom2 and bottom1 > top2) 
+                top1 < bottom2 and bottom1 > top2)
+    
+    def fire_bullet(self, entity_id, target_x, target_y):
+        # Проверяем, есть ли у сущности оружие
+        if not self.world.has_component(entity_id, "Weapon"):
+            print(f"Сущность {entity_id} не имеет компонента Weapon")
+            return
+        
+        weapon = self.world.get_component(entity_id, "Weapon")
+        print(f"Найден компонент Weapon у сущности {entity_id}: damage={weapon.damage}, fire_rate={weapon.fire_rate}")
+        
+        # Проверяем перезарядку
+        if entity_id in self.bullet_cooldown and self.bullet_cooldown[entity_id] > 0:
+            print(f"Перезарядка: осталось {self.bullet_cooldown[entity_id]:.2f} сек")
+            return
+            
+        # Проверяем, идет ли перезарядка
+        if entity_id in self.reload_status and self.reload_status[entity_id] > 0:
+            print(f"Идет перезарядка: осталось {self.reload_status[entity_id]:.2f} сек")
+            return
+        
+        # Проверяем боезапас
+        if weapon.current_ammo <= 0 and weapon.max_ammo > 0:
+            # Автоматическая перезарядка при пустом магазине
+            print("Магазин пуст, начинаем перезарядку")
+            self.reload(entity_id)
+            return
+        
+        # Уменьшаем боезапас
+        if weapon.max_ammo > 0:
+            weapon.current_ammo -= 1
+        
+        # Устанавливаем перезарядку
+        self.bullet_cooldown[entity_id] = 1.0 / weapon.fire_rate
+        
+        # Получаем позицию стрелка
+        position = self.world.get_component(entity_id, Position)
+        
+        # Вычисляем направление
+        dx = target_x - position.x
+        dy = target_y - position.y
+        distance = math.sqrt(dx * dx + dy * dy)
+        
+        if distance > 0:
+            dx /= distance
+            dy /= distance
+        
+        # Создаем пулю с помощью метода create_bullet
+        self.create_bullet(entity_id, position.x, position.y, dx, dy, weapon.damage, weapon.bullet_speed)
+        
+        # Добавляем отладочную информацию
+        print(f"Выстрел! Патронов осталось: {weapon.current_ammo}")
+    
+    def reload(self, entity_id):
+        """
+        Перезаряжает оружие сущности
+        :param entity_id: ID сущности
+        """
+        if not self.world.has_component(entity_id, "Weapon"):
+            return
+            
+        weapon = self.world.get_component(entity_id, "Weapon")
+        
+        # Проверяем, нужна ли перезарядка
+        if weapon.current_ammo == weapon.max_ammo:
+            return
+            
+        # Проверяем, идет ли уже перезарядка
+        if entity_id in self.reload_status and self.reload_status[entity_id] > 0:
+            return
+            
+        # Начинаем перезарядку
+        reload_time = 2.0  # Время перезарядки в секундах
+        self.reload_status[entity_id] = reload_time
+        print(f"Перезарядка начата, осталось {reload_time:.1f} сек") 

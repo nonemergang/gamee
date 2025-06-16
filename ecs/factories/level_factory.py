@@ -2,67 +2,24 @@ import random
 import pygame
 from ecs.components.components import Position, Sprite, Collider, Tile
 from ecs.factories.prim_maze_generator import generate_prim_maze
+from ecs.utils.sprite_manager import sprite_manager
 
 # Загружаем текстуры или создаем их
 def get_textures():
+    """
+    Возвращает словарь текстур для тайлов
+    """
     textures = {}
     
-    # Создаем текстуры программно, если нет готовых изображений
-    # Стена
-    wall_texture = pygame.Surface((32, 32))
-    wall_texture.fill((60, 60, 70))
-    # Добавляем эффект кирпичей
-    for i in range(0, 32, 8):
-        for j in range(0, 32, 4):
-            offset = 4 if i % 16 == 0 else 0
-            pygame.draw.rect(wall_texture, (80, 80, 90), (offset + j, i, 3, 3))
-    # Добавляем тени
-    pygame.draw.line(wall_texture, (40, 40, 50), (0, 0), (0, 31), 2)
-    pygame.draw.line(wall_texture, (40, 40, 50), (0, 0), (31, 0), 2)
-    pygame.draw.line(wall_texture, (90, 90, 100), (31, 0), (31, 31), 2)
-    pygame.draw.line(wall_texture, (90, 90, 100), (0, 31), (31, 31), 2)
-    textures["wall"] = wall_texture
-    
-    # Пол
-    floor_texture = pygame.Surface((32, 32))
-    floor_texture.fill((180, 180, 190))
-    # Добавляем эффект плитки
-    for i in range(0, 32, 8):
-        for j in range(0, 32, 8):
-            pygame.draw.rect(floor_texture, (170, 170, 180), (j, i, 7, 7))
-    textures["floor"] = floor_texture
-    
-    # Вход
-    entrance_texture = pygame.Surface((32, 32))
-    entrance_texture.fill((100, 200, 100))
-    # Добавляем узор
-    pygame.draw.circle(entrance_texture, (50, 150, 50), (16, 16), 10)
-    pygame.draw.circle(entrance_texture, (150, 250, 150), (16, 16), 5)
-    textures["entrance"] = entrance_texture
-    
-    # Выход
-    exit_texture = pygame.Surface((32, 32))
-    exit_texture.fill((200, 100, 100))
-    # Добавляем узор
-    pygame.draw.circle(exit_texture, (150, 50, 50), (16, 16), 10)
-    pygame.draw.circle(exit_texture, (250, 150, 150), (16, 16), 5)
-    textures["exit"] = exit_texture
+    # Получаем текстуры из менеджера спрайтов
+    textures["wall"] = sprite_manager.get_sprite("wall")
+    textures["floor"] = sprite_manager.get_sprite("floor")
+    textures["entrance"] = sprite_manager.get_sprite("entrance")
+    textures["exit"] = sprite_manager.get_sprite("exit")
     
     # Декоративные элементы
-    # Трещина на полу
-    crack_texture = pygame.Surface((32, 32), pygame.SRCALPHA)
-    pygame.draw.line(crack_texture, (100, 100, 110), (10, 10), (22, 22), 2)
-    pygame.draw.line(crack_texture, (100, 100, 110), (22, 22), (28, 18), 2)
-    textures["crack"] = crack_texture
-    
-    # Мох на стене
-    moss_texture = pygame.Surface((32, 32), pygame.SRCALPHA)
-    for i in range(10):
-        x = random.randint(0, 31)
-        y = random.randint(0, 31)
-        size = random.randint(2, 5)
-        pygame.draw.circle(moss_texture, (0, 150, 0, 100), (x, y), size)
-    textures["moss"] = moss_texture
+    textures["crack"] = sprite_manager.get_sprite("crack")
+    textures["moss"] = sprite_manager.get_sprite("moss")
     
     return textures
 

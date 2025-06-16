@@ -1,6 +1,7 @@
 import pygame
 import sys
 import random
+import time
 from pygame.locals import *
 from ecs.world import World
 from ecs.systems.render_system import RenderSystem
@@ -17,6 +18,7 @@ from ecs.components.components import Position, Tile, Player
 from ecs.systems.enemy_ai_system import EnemyAISystem
 from ecs.systems.health_system import HealthSystem
 from ecs.systems.lighting_system import LightingSystem
+from ecs.utils.sprite_manager import sprite_manager
 
 # Инициализация Pygame
 pygame.init()
@@ -26,6 +28,9 @@ screen_width = 1024
 screen_height = 768
 screen = pygame.display.set_mode((screen_width, screen_height))
 pygame.display.set_caption("Лабиринт с ECS")
+
+# Загружаем спрайты
+sprite_manager.load_sprites()
 
 # Создаем мир ECS
 world = World()
@@ -41,6 +46,9 @@ enemy_ai_system = EnemyAISystem(world)
 weapon_system = WeaponSystem(world)
 health_system = HealthSystem(world)
 
+# Устанавливаем ссылку на WeaponSystem в PlayerControlSystem
+player_control_system.set_weapon_system(weapon_system)
+
 world.add_system(movement_system)
 world.add_system(collision_system)
 world.add_system(player_control_system)
@@ -51,14 +59,17 @@ world.add_system(render_system)
 world.add_system(weapon_system)
 world.add_system(health_system)
 
+# Создаем шрифт для отображения FPS
+fps_font = pygame.font.SysFont(None, 24)
+
 def reset_game():
     """Сбрасывает игру и создает новый уровень"""
     # Удаляем все сущности
     world.clear_entities()
     
     # Создаем новый уровень (лабиринт)
-    level_width = 25  # Уменьшенный размер для более компактного лабиринта
-    level_height = 25
+    level_width = 20  # Уменьшенный размер для более компактного лабиринта
+    level_height = 20
     level_entities = create_level(world, level_width, level_height)
     
     # Находим начальную позицию (вход в лабиринт)
@@ -70,15 +81,29 @@ def reset_game():
                 entrance_pos = world.get_component(entity_id, Position)
                 break
     
-    # Если не нашли вход, используем случайную позицию
+    # Если не нашли вход, ищем любую проходимую позицию
     if not entrance_pos:
-        entrance_pos = Position(100, 100)
+        walkable_positions = []
+        for entity_id in level_entities:
+            if world.has_component(entity_id, Tile):
+                tile = world.get_component(entity_id, Tile)
+                if tile.walkable:
+                    pos = world.get_component(entity_id, Position)
+                    walkable_positions.append((pos.x, pos.y))
+        
+        if walkable_positions:
+            # Выбираем случайную проходимую позицию
+            x, y = random.choice(walkable_positions)
+            entrance_pos = Position(x, y)
+        else:
+            # Если не нашли проходимых позиций, используем дефолтную
+            entrance_pos = Position(100, 100)
     
     # Создаем игрока
     player_id = create_player(world, entrance_pos.x, entrance_pos.y)
     
     # Создаем врагов в случайных местах
-    enemy_count = 6  # Меньше врагов для более компактной игры
+    enemy_count = 3  # Меньше врагов для более компактной игры
     floor_tiles = []
     
     # Собираем все проходимые тайлы
@@ -118,8 +143,14 @@ reset_game()
 # Основной игровой цикл
 clock = pygame.time.Clock()
 running = True
+show_fps = True
+target_fps = 60
+frame_times = []  # Для расчета скользящего среднего FPS
 
 while running:
+    # Замеряем время начала кадра
+    frame_start_time = time.time()
+    
     # Обработка событий
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -130,9 +161,29 @@ while running:
             elif event.key == pygame.K_r:
                 # Сброс игры при нажатии R
                 reset_game()
+            elif event.key == pygame.K_F1:
+                # Включение/выключение режима отладки
+                player_control_system.debug_mode = not player_control_system.debug_mode
+                print(f"Режим отладки: {'включен' if player_control_system.debug_mode else 'выключен'}")
+            elif event.key == pygame.K_F2:
+                # Включение/выключение отображения FPS
+                show_fps = not show_fps
+            elif event.key == pygame.K_PLUS or event.key == pygame.K_KP_PLUS or event.key == pygame.K_EQUALS:
+                # Увеличение масштаба камеры
+                current_zoom = camera_system.get_zoom()
+                camera_system.set_zoom(current_zoom + 0.5)
+                print(f"Масштаб камеры: {camera_system.get_zoom():.1f}x")
+            elif event.key == pygame.K_MINUS or event.key == pygame.K_KP_MINUS:
+                # Уменьшение масштаба камеры
+                current_zoom = camera_system.get_zoom()
+                camera_system.set_zoom(current_zoom - 0.5)
+                print(f"Масштаб камеры: {camera_system.get_zoom():.1f}x")
+        elif event.type == pygame.VIDEORESIZE:
+            # Обновляем поверхность затемнения при изменении размера окна
+            render_system.update_darkness_surface()
     
     # Получаем время, прошедшее с последнего кадра
-    dt = clock.tick(60) / 1000.0  # Конвертируем миллисекунды в секунды
+    dt = clock.tick(target_fps) / 1000.0  # Конвертируем миллисекунды в секунды
     
     # Обновляем все системы
     world.update(dt)
@@ -143,8 +194,34 @@ while running:
         # Если игрок умер, сбрасываем игру
         reset_game()
     
+    # Отображаем FPS
+    if show_fps:
+        # Вычисляем время, затраченное на кадр
+        frame_time = time.time() - frame_start_time
+        frame_times.append(frame_time)
+        
+        # Храним только последние 60 кадров для расчета скользящего среднего
+        if len(frame_times) > 60:
+            frame_times.pop(0)
+        
+        # Вычисляем среднее FPS
+        avg_frame_time = sum(frame_times) / len(frame_times)
+        fps = 1.0 / avg_frame_time if avg_frame_time > 0 else 0
+        
+        # Отображаем FPS
+        fps_text = f"FPS: {fps:.1f}"
+        fps_surface = fps_font.render(fps_text, True, (255, 255, 255))
+        screen.blit(fps_surface, (screen_width - 100, 10))
+    
     # Обновляем экран
     pygame.display.flip()
+    
+    # Ограничиваем частоту кадров
+    frame_time = time.time() - frame_start_time
+    target_frame_time = 1.0 / target_fps
+    if frame_time < target_frame_time:
+        # Если кадр обработан быстрее, чем требуется, ждем оставшееся время
+        time.sleep(target_frame_time - frame_time)
 
 # Завершение работы
 pygame.quit()

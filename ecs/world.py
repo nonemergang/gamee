@@ -32,6 +32,14 @@ class World:
             # Удаляем сущность
             del self.entities[entity_id]
     
+    def entity_exists(self, entity_id):
+        """
+        Проверяет, существует ли сущность с указанным ID
+        :param entity_id: ID сущности
+        :return: True, если сущность существует, иначе False
+        """
+        return entity_id in self.entities
+    
     def clear_entities(self):
         """
         Удаляет все сущности и их компоненты
@@ -94,11 +102,18 @@ class World:
         """
         Проверяет, есть ли у сущности компонент указанного типа
         :param entity_id: ID сущности
-        :param component_type: Тип компонента
+        :param component_type: Тип компонента или строковое имя типа
         :return: True, если у сущности есть компонент указанного типа, иначе False
         """
         # Проверяем, что сущность существует
         if entity_id not in self.entities:
+            return False
+        
+        # Если передана строка, ищем соответствующий тип компонента
+        if isinstance(component_type, str):
+            for comp_type in self.components:
+                if comp_type.__name__ == component_type:
+                    return entity_id in self.components[comp_type]
             return False
         
         # Проверяем, есть ли у сущности компонент указанного типа
@@ -108,9 +123,17 @@ class World:
         """
         Возвращает компонент указанного типа у сущности
         :param entity_id: ID сущности
-        :param component_type: Тип компонента
+        :param component_type: Тип компонента или строковое имя типа
         :return: Экземпляр компонента или None, если компонент не найден
         """
+        # Если передана строка, ищем соответствующий тип компонента
+        if isinstance(component_type, str):
+            for comp_type in self.components:
+                if comp_type.__name__ == component_type:
+                    if entity_id in self.components[comp_type]:
+                        return self.components[comp_type][entity_id]
+            return None
+        
         # Проверяем, что сущность и компонент существуют
         if not self.has_component(entity_id, component_type):
             return None

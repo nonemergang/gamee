@@ -1,103 +1,113 @@
 import pygame
 import math
 from ecs.systems.system import System
-from ecs.components.components import Position, Velocity, Player, Weapon
+from ecs.components.components import Position, Velocity, Player, Weapon, Sprite
 from ecs.systems.camera_system import CameraSystem
+from ecs.systems.weapon_system import WeaponSystem
 
 class PlayerControlSystem(System):
     """Система для обработки пользовательского ввода и управления игроком"""
     
+    def __init__(self, world):
+        super().__init__(world)
+        self.weapon_system = None
+        self.debug_mode = True  # Режим отладки
+    
+    def set_weapon_system(self, weapon_system):
+        """
+        Устанавливает ссылку на систему оружия
+        :param weapon_system: Система оружия
+        """
+        self.weapon_system = weapon_system
+    
     def update(self, dt):
         """
-        Обрабатывает пользовательский ввод и обновляет компоненты игрока
+        Обновляет систему управления игроком
         :param dt: Время, прошедшее с последнего обновления (в секундах)
         """
-        # Получаем все сущности игрока
+        # Получаем все сущности с компонентами Player, Position и Velocity
         player_entities = self.world.get_entities_with_components(Player, Position, Velocity)
         
         if not player_entities:
-            return
-        
-        # Обрабатываем только первого игрока (в случае многопользовательской игры)
-        player_id = player_entities[0]
-        player = self.world.get_component(player_id, Player)
-        position = self.world.get_component(player_id, Position)
-        velocity = self.world.get_component(player_id, Velocity)
-        
-        # Обработка клавиатурного ввода для движения
-        keys = pygame.key.get_pressed()
-        
-        # Сбрасываем скорость
-        velocity.dx = 0
-        velocity.dy = 0
-        
-        # Определяем направление движения
-        if keys[pygame.K_w] or keys[pygame.K_UP]:
-            velocity.dy = -player.speed
-        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
-            velocity.dy = player.speed
-        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-            velocity.dx = -player.speed
-        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-            velocity.dx = player.speed
-        
-        # Нормализуем диагональное движение
-        if velocity.dx != 0 and velocity.dy != 0:
-            length = math.sqrt(velocity.dx ** 2 + velocity.dy ** 2)
-            velocity.dx = velocity.dx / length * player.speed
-            velocity.dy = velocity.dy / length * player.speed
-        
-        # Обработка стрельбы
-        if self.world.has_component(player_id, Weapon):
-            weapon = self.world.get_component(player_id, Weapon)
+            return  # Нет игроков для обработки
             
-            # Обновляем таймер перезарядки
-            if weapon.is_reloading:
-                weapon.reload_timer += dt
-                if weapon.reload_timer >= weapon.reload_time:
-                    weapon.ammo = weapon.max_ammo
-                    weapon.is_reloading = False
-                    weapon.reload_timer = 0
+        # Обрабатываем каждого игрока
+        for player_id in player_entities:
+            player = self.world.get_component(player_id, Player)
+            position = self.world.get_component(player_id, Position)
+            velocity = self.world.get_component(player_id, Velocity)
             
-            # Обновляем таймер стрельбы
-            if weapon.cooldown > 0:
-                weapon.cooldown -= dt
+            # Проверяем наличие спрайта для поворота
+            has_sprite = self.world.has_component(player_id, Sprite)
             
-            # Получаем смещение камеры
-            camera_offset = self._get_camera_offset()
+            # Проверяем наличие компонента Weapon
+            has_weapon = self.world.has_component(player_id, "Weapon")
+            if self.debug_mode and not has_weapon:
+                print(f"У игрока нет компонента Weapon!")
             
-            # Обработка нажатия кнопки мыши для стрельбы
-            mouse_buttons = pygame.mouse.get_pressed()
-            if mouse_buttons[0] and weapon.cooldown <= 0 and not weapon.is_reloading and weapon.ammo > 0:
-                # Получаем позицию мыши в экранных координатах
-                mouse_pos = pygame.mouse.get_pos()
+            # Получаем состояние клавиш
+            keys = pygame.key.get_pressed()
+            
+            # Сбрасываем скорость
+            velocity.dx = 0
+            velocity.dy = 0
+            
+            # Обработка движения
+            if keys[pygame.K_w] or keys[pygame.K_UP]:
+                velocity.dy = -player.speed
+            if keys[pygame.K_s] or keys[pygame.K_DOWN]:
+                velocity.dy = player.speed
+            if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+                velocity.dx = -player.speed
+            if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+                velocity.dx = player.speed
+            
+            # Нормализуем скорость по диагонали
+            if velocity.dx != 0 and velocity.dy != 0:
+                velocity.dx *= 0.7071  # 1/sqrt(2)
+                velocity.dy *= 0.7071
+            
+            # Получаем позицию курсора мыши
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            camera_system = next((system for system in self.world.systems if isinstance(system, CameraSystem)), None)
+            
+            if camera_system:
+                # Преобразуем координаты мыши в мировые координаты
+                world_mouse_x, world_mouse_y = camera_system.screen_to_world(mouse_x, mouse_y)
                 
-                # Преобразуем экранные координаты в мировые с учетом смещения камеры
-                # Для правильного расчета направления стрельбы
-                world_mouse_x = mouse_pos[0] + camera_offset[0]
-                world_mouse_y = mouse_pos[1] + camera_offset[1]
-                
-                # Вычисляем направление стрельбы
-                dx = world_mouse_x - position.x
-                dy = world_mouse_y - position.y
-                
-                # Нормализуем направление
-                length = math.sqrt(dx ** 2 + dy ** 2)
-                if length > 0:
-                    dx = dx / length
-                    dy = dy / length
-                
-                # Создаем событие стрельбы (будет обработано в WeaponSystem)
-                self._create_shoot_event(player_id, position.x, position.y, dx, dy)
-                
-                # Обновляем состояние оружия
-                weapon.ammo -= 1
-                weapon.cooldown = 1.0 / weapon.fire_rate
+                # Поворачиваем спрайт игрока в сторону курсора
+                if has_sprite:
+                    sprite = self.world.get_component(player_id, Sprite)
+                    
+                    # Вычисляем угол между игроком и курсором
+                    dx = world_mouse_x - position.x
+                    dy = world_mouse_y - position.y
+                    angle = math.degrees(math.atan2(dy, dx))
+                    
+                    # Корректируем угол для правильного отображения спрайта
+                    # В Pygame 0 градусов - это направление вправо, а 90 градусов - вниз
+                    # Мы хотим, чтобы спрайт смотрел вверх при 0 градусов
+                    sprite.angle = angle + 90
+                    
+                    if self.debug_mode:
+                        print(f"Угол поворота: {sprite.angle:.1f}°")
+            
+                # Обработка стрельбы
+                mouse_buttons = pygame.mouse.get_pressed()
+                if mouse_buttons[0] and self.weapon_system:  # Левая кнопка мыши
+                    if self.debug_mode:
+                        print(f"Клик мыши: экран({mouse_x}, {mouse_y}), мир({world_mouse_x:.1f}, {world_mouse_y:.1f})")
+                        print(f"Игрок: ({position.x:.1f}, {position.y:.1f})")
+                    
+                    # Стреляем в направлении мыши
+                    if has_weapon:
+                        self.weapon_system.fire_bullet(player_id, world_mouse_x, world_mouse_y)
+                    elif self.debug_mode:
+                        print("Не могу стрелять: у игрока нет оружия")
             
             # Обработка перезарядки (клавиша R)
-            if keys[pygame.K_r] and not weapon.is_reloading and weapon.ammo < weapon.max_ammo:
-                weapon.is_reloading = True
-                weapon.reload_timer = 0
+            if keys[pygame.K_r] and self.weapon_system and has_weapon:
+                self.weapon_system.reload(player_id)
     
     def _create_shoot_event(self, player_id, x, y, dx, dy):
         """
@@ -123,7 +133,4 @@ class PlayerControlSystem(System):
         camera_system = next((system for system in self.world.systems if isinstance(system, CameraSystem)), None)
         if camera_system:
             return camera_system.get_camera_offset()
-        return (0, 0)
-
-# Импортируем WeaponSystem для создания пуль
-from ecs.systems.weapon_system import WeaponSystem 
+        return (0, 0) 
