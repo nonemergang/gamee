@@ -98,12 +98,25 @@ class Health:
     """Компонент здоровья"""
     def __init__(self, maximum=100, current=100, regeneration_rate=0, regeneration_interval=1.0):
         self.maximum = maximum
-        self.current = current
+        self._current = current
         self.regeneration_rate = regeneration_rate
         self.regeneration_interval = regeneration_interval
         self.regeneration_timer = 0
         self.invulnerable = False
         self.invulnerable_timer = 0
+    
+    @property
+    def current(self):
+        return self._current
+    
+    @current.setter
+    def current(self, value):
+        old_value = self._current
+        self._current = value
+        if old_value > 0 and value <= 0:
+            print(f"КРИТИЧЕСКОЕ: Здоровье упало до {value} (было {old_value})")
+        elif old_value != value:
+            print(f"Изменение здоровья: {old_value} -> {value}")
 
 class Camera:
     """Компонент камеры"""
@@ -147,44 +160,31 @@ class Minimap:
         self.visible = True  # Видимость мини-карты
 
 class GameProgress:
-    """Компонент для отслеживания прогресса игрока в рогалике"""
+    """Компонент для отслеживания прогресса игры"""
     def __init__(self):
-        self.level = 1  # Текущий уровень глубины
-        self.enemies_killed = 0  # Количество убитых врагов
-        self.total_score = 0  # Общий счет
+        self.level = 1
+        self.enemies_killed = 0
+        self.total_score = 0
         self.time_played = 0  # Время игры в секундах
-        self.levels_completed = 0  # Количество пройденных уровней
-        
-        # Параметры для масштабирования сложности
-        self.enemy_health_multiplier = 1.0  # Множитель здоровья врагов
-        self.enemy_damage_multiplier = 1.0  # Множитель урона врагов
-        self.enemy_count_multiplier = 1.0  # Множитель количества врагов
-        
-        # Бонусы игрока
-        self.player_damage_bonus = 0  # Дополнительный урон игрока
-        self.player_speed_bonus = 0  # Дополнительная скорость игрока
-        self.player_health_bonus = 0  # Дополнительное здоровье игрока
-        
-    def increase_level(self):
-        """Увеличивает уровень и обновляет множители сложности"""
-        self.level += 1
-        self.levels_completed += 1
-        
-        # Увеличиваем множители сложности с каждым уровнем
-        self.enemy_health_multiplier += 0.1
-        self.enemy_damage_multiplier += 0.05
-        self.enemy_count_multiplier += 0.2
-        
-        # Ограничиваем максимальные множители
-        self.enemy_health_multiplier = min(self.enemy_health_multiplier, 3.0)
-        self.enemy_damage_multiplier = min(self.enemy_damage_multiplier, 2.0)
-        self.enemy_count_multiplier = min(self.enemy_count_multiplier, 5.0)
-        
-    def add_score(self, points):
-        """Добавляет очки к общему счету"""
-        self.total_score += points
-        
+    
     def enemy_killed(self):
-        """Увеличивает счетчик убитых врагов"""
+        """Увеличивает счетчик убитых врагов и общий счет"""
         self.enemies_killed += 1
-        self.add_score(10)  # За каждого врага даем 10 очков
+        self.total_score += 10  # 10 очков за каждого врага
+    
+    def next_level(self):
+        """Переход на следующий уровень"""
+        self.level += 1
+        self.total_score += 50  # 50 очков за прохождение уровня
+    
+    def increase_level(self):
+        """Увеличивает уровень и добавляет очки (для совместимости)"""
+        self.next_level()
+    
+    def reset(self):
+        """Сбрасывает прогресс игры"""
+        self.level = 1
+        self.enemies_killed = 0
+        self.total_score = 0
+        self.time_played = 0
+        print("Прогресс игры сброшен")

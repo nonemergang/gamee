@@ -21,8 +21,8 @@ class HealthSystem(System):
     
     def update(self, dt):
         """
-        Обновляет состояние здоровья всех сущностей
-        :param dt: Время, прошедшее с последнего обновления
+        Обновляет здоровье сущностей
+        :param dt: Время, прошедшее с прошлого кадра
         """
         # Получаем систему порталов, если еще не получили
         if not self.portal_system:
@@ -34,34 +34,26 @@ class HealthSystem(System):
         # Обновляем индикаторы урона/лечения
         self.update_damage_indicators(dt)
         
-        # Получаем все сущности с компонентом здоровья
+        # Обработка регенерации здоровья
         entities = self.world.get_entities_with_components(Health)
-        
         for entity_id in entities:
             health = self.world.get_component(entity_id, Health)
             
-            # Обрабатываем неуязвимость
-            if health.invulnerable:
-                health.invulnerable_timer -= dt
-                if health.invulnerable_timer <= 0:
-                    health.invulnerable = False
-            
-            # Обрабатываем регенерацию здоровья
+            # Обработка регенерации
             if health.regeneration_rate > 0:
                 health.regeneration_timer += dt
                 if health.regeneration_timer >= health.regeneration_interval:
                     health.regeneration_timer = 0
-                    self.heal_entity(entity_id, health.regeneration_rate)
+                    health.current = min(health.maximum, health.current + health.regeneration_rate)
             
-            # Проверяем, не умерла ли сущность
+            # Проверка смерти
             if health.current <= 0:
-                # Проверяем, является ли сущность игроком
+                # Если у сущности есть компонент Player, обрабатываем смерть игрока
                 if self.world.has_component(entity_id, Player):
-                    # Игрок умер, обрабатываем смерть игрока
                     self.handle_player_death(entity_id)
-                else:
-                    # Обрабатываем смерть не-игрока (например, врага)
-                    self.handle_entity_death(entity_id)
+                # Иначе удаляем сущность
+                elif self.world.has_component(entity_id, Enemy):
+                    self.handle_enemy_death(entity_id)
     
     def damage_entity(self, entity_id, damage, attacker_id=None):
         """
@@ -129,49 +121,24 @@ class HealthSystem(System):
         Обрабатывает смерть игрока
         :param player_id: ID игрока
         """
-        print("Игрок умер!")
+        print("Игрок умер! Обработка смерти в HealthSystem")
         
-        # Сбрасываем здоровье игрока до максимума
+        # Проверяем, что здоровье действительно равно 0
         health = self.world.get_component(player_id, Health)
-        health.current = health.maximum
+        print(f"Текущее здоровье игрока: {health.current}/{health.maximum}")
         
-        # Сбрасываем прогресс игры, если есть система порталов
+        # Больше не сбрасываем здоровье игрока и не перезагружаем уровень,
+        # так как теперь показываем экран окончания игры
+        
+        # Сохраняем информацию о прогрессе для экрана окончания игры
         if self.portal_system and hasattr(self.portal_system, 'game_progress'):
-            # Сохраняем счет и количество убитых врагов
-            score = self.portal_system.game_progress.total_score
-            enemies_killed = self.portal_system.game_progress.enemies_killed
+            # Выводим информацию о прогрессе
+            progress = self.portal_system.game_progress
+            print(f"Игра окончена! Общий счет: {progress.total_score}, Уровень: {progress.level}, Убито врагов: {progress.enemies_killed}")
             
-            # Создаем новый прогресс
-            self.portal_system.game_progress = self.portal_system.game_progress.__class__()
-            
-            # Восстанавливаем счет и количество убитых врагов
-            self.portal_system.game_progress.total_score = score
-            self.portal_system.game_progress.enemies_killed = enemies_killed
-            
-            # Сбрасываем уровень
-            self.portal_system.current_level = 1
-            
-            print(f"Игра сброшена! Общий счет: {score}, Убито врагов: {enemies_killed}")
-            
-            # Перезагружаем уровень
-            if hasattr(self.portal_system, 'clear_current_level'):
-                self.portal_system.clear_current_level()
-                
-                # Создаем новый уровень
-                from ecs.factories.level_factory import create_level
-                level_entities = create_level(self.world, 30, 30)
-                
-                # Находим вход для размещения игрока
-                entrance_pos = self.portal_system.find_entrance_position(level_entities)
-                if entrance_pos:
-                    player_pos = self.world.get_component(player_id, Position)
-                    player_pos.x = entrance_pos.x
-                    player_pos.y = entrance_pos.y
-                
-                # Создаем врагов
-                self.portal_system.spawn_enemies_on_level(level_entities, player_id)
+            # Обработка смерти игрока завершена, дальше main.py покажет экран окончания игры
     
-    def handle_entity_death(self, entity_id):
+    def handle_enemy_death(self, entity_id):
         """
         Обрабатывает смерть сущности (не игрока)
         :param entity_id: ID сущности
@@ -180,6 +147,7 @@ class HealthSystem(System):
         if self.world.has_component(entity_id, Enemy):
             # Увеличиваем счетчик убитых врагов в GameProgress
             if self.portal_system and hasattr(self.portal_system, 'game_progress'):
+                # Вызываем метод enemy_killed для увеличения счетчика убитых врагов
                 self.portal_system.game_progress.enemy_killed()
                 
                 # Выводим информацию о прогрессе
@@ -187,7 +155,8 @@ class HealthSystem(System):
                 print(f"Враг убит! Счет: {progress.total_score}, Убито врагов: {progress.enemies_killed}")
         
         # Удаляем сущность из мира
-        self.world.delete_entity(entity_id)
+        if self.world.entity_exists(entity_id):
+            self.world.delete_entity(entity_id)
     
     def add_damage_indicator(self, x, y, amount, is_healing=False):
         """

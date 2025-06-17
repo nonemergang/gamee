@@ -206,6 +206,12 @@ class PortalSystem(System):
         self.level_entities[self.current_level] = level_entities
         
         print(f"Создан новый уровень {self.current_level} с {len(level_entities)} сущностями")
+        
+        # Обновляем кэш стен в системе освещения
+        for system in self.world.systems:
+            if hasattr(system, 'wall_cache_dirty'):
+                system.wall_cache_dirty = True
+                print("Обновляем кэш стен для системы освещения")
     
     def clear_current_level(self):
         """

@@ -54,6 +54,34 @@ class WeaponSystem(System):
         
         # Обновляем эффекты попадания пуль
         self._update_bullet_hit_effects(dt)
+        
+        # Проверяем пули без спрайтов и добавляем их
+        self._ensure_bullet_sprites()
+    
+    def _ensure_bullet_sprites(self):
+        """
+        Проверяет все пули и добавляет спрайты, если их нет
+        """
+        # Получаем все сущности с компонентами пули и позиции
+        bullet_entities = self.world.get_entities_with_components(Bullet, Position)
+        
+        for entity_id in bullet_entities:
+            # Проверяем, есть ли у пули спрайт
+            if not self.world.has_component(entity_id, Sprite):
+                print(f"Пуля {entity_id} не имеет спрайта, добавляем спрайт")
+                
+                # Проверяем наличие текстуры пули и при необходимости пересоздаем
+                if self.bullet_texture is None:
+                    self.bullet_texture = create_bullet_texture()
+                
+                # Добавляем спрайт для пули
+                bullet_sprite = Sprite(
+                    image=self.bullet_texture,
+                    width=8,
+                    height=8,
+                    layer=5  # Более высокий слой для пуль, чтобы они отображались поверх других объектов
+                )
+                self.world.add_component(entity_id, bullet_sprite)
     
     def _update_weapons(self, dt):
         """
@@ -134,10 +162,14 @@ class WeaponSystem(System):
                     return
         
         # Проверяем столкновения с врагами
-        enemy_entities = self.world.get_entities_with_components(Enemy, Position, Collider)
+        enemy_entities = self.world.get_entities_with_components(Enemy, Position)
         for enemy_id in enemy_entities:
             # Пропускаем, если пуля принадлежит этому врагу
             if bullet.owner == enemy_id:
+                continue
+                
+            # Проверяем наличие коллайдера у врага
+            if not self.world.has_component(enemy_id, Collider):
                 continue
                 
             enemy_pos = self.world.get_component(enemy_id, Position)
@@ -148,6 +180,8 @@ class WeaponSystem(System):
                                     enemy_pos.x, enemy_pos.y, enemy_collider.width, enemy_collider.height):
                 # Наносим урон врагу
                 if self.world.has_component(enemy_id, Health):
+                    health = self.world.get_component(enemy_id, Health)
+                    
                     # Получаем систему здоровья
                     health_system = next((system for system in self.world.systems if hasattr(system, 'damage_entity')), None)
                     if health_system:
@@ -157,9 +191,22 @@ class WeaponSystem(System):
                         # Создаем эффект попадания
                         if damage_dealt > 0:
                             self._create_bullet_hit_effect(bullet_pos.x, bullet_pos.y, (255, 0, 0))
+                            print(f"Нанесен урон врагу {enemy_id}: {damage_dealt} урона. Осталось здоровья: {health.current}")
+                        
+                        # Проверяем, убит ли враг
+                        if health.current <= 0:
+                            print(f"Враг {enemy_id} убит!")
+                            # Вызываем handle_entity_death для правильной обработки смерти врага
+                            health_system.handle_entity_death(enemy_id)
+                            
+                            # Удаляем пулю
+                            if self.world.entity_exists(bullet_id):
+                                self.world.delete_entity(bullet_id)
+                            return
                 
                 # Удаляем пулю
-                self.world.delete_entity(bullet_id)
+                if self.world.entity_exists(bullet_id):
+                    self.world.delete_entity(bullet_id)
                 return
         
         # Проверяем столкновения с игроком
@@ -188,7 +235,8 @@ class WeaponSystem(System):
                             self._create_bullet_hit_effect(bullet_pos.x, bullet_pos.y, (0, 0, 255))
                 
                 # Удаляем пулю
-                self.world.delete_entity(bullet_id)
+                if self.world.entity_exists(bullet_id):
+                    self.world.delete_entity(bullet_id)
                 return
     
     def _check_collision(self, x1, y1, radius, x2, y2, width, height):
@@ -286,17 +334,33 @@ class WeaponSystem(System):
         self.world.add_component(bullet_id, Velocity(dx * bullet_speed, dy * bullet_speed))
         
         # Проверяем наличие текстуры пули и при необходимости пересоздаем
-        if self.bullet_texture is None:
+        if self.bullet_texture is None or not isinstance(self.bullet_texture, pygame.Surface):
+            print("Пересоздаем текстуру пули перед выстрелом")
             self.bullet_texture = create_bullet_texture()
         
         # Добавляем спрайт для пули
-        bullet_sprite = Sprite(
-            image=self.bullet_texture,
-            width=8,
-            height=8,
-            layer=5  # Более высокий слой для пуль, чтобы они отображались поверх других объектов
-        )
-        self.world.add_component(bullet_id, bullet_sprite)
+        try:
+            bullet_sprite = Sprite(
+                image=self.bullet_texture,
+                width=8,
+                height=8,
+                layer=5  # Более высокий слой для пуль, чтобы они отображались поверх других объектов
+            )
+            self.world.add_component(bullet_id, bullet_sprite)
+            print(f"Создана пуля {bullet_id} со спрайтом")
+        except Exception as e:
+            print(f"Ошибка при создании спрайта пули: {e}")
+            # Создаем запасной спрайт, если возникла ошибка
+            fallback_surface = pygame.Surface((8, 8), pygame.SRCALPHA)
+            pygame.draw.circle(fallback_surface, (255, 255, 0), (4, 4), 4)
+            bullet_sprite = Sprite(
+                image=fallback_surface,
+                width=8,
+                height=8,
+                layer=5
+            )
+            self.world.add_component(bullet_id, bullet_sprite)
+            print(f"Создан запасной спрайт для пули {bullet_id}")
         
         # Обновляем состояние оружия
         weapon.cooldown = 1.0 / weapon.fire_rate
@@ -385,4 +449,95 @@ class WeaponSystem(System):
             
             # Для более заметного эффекта, рисуем внутренний круг
             inner_size = max(2, int(effect["size"] // 2))
-            pygame.draw.circle(self.screen, (255, 255, 255), (int(screen_x), int(screen_y)), inner_size) 
+            pygame.draw.circle(self.screen, (255, 255, 255), (int(screen_x), int(screen_y)), inner_size)
+
+    def _check_bullet_collision(self, bullet_id, bullet_entity):
+        """
+        Проверяет столкновение пули с сущностями
+        :param bullet_id: ID пули
+        :param bullet_entity: Компоненты пули
+        :return: True, если пуля столкнулась с чем-то, False в противном случае
+        """
+        bullet_pos = bullet_entity['position']
+        bullet_component = bullet_entity['bullet']
+        
+        # Если пуля принадлежит игроку, проверяем столкновение с врагами
+        if bullet_component.owner is not None and self.world.has_component(bullet_component.owner, Player):
+            # Проверяем столкновение с врагами
+            enemy_entities = self.world.get_entities_with_components(Position, Enemy)
+            
+            for enemy_id in enemy_entities:
+                # Проверяем, есть ли у врага коллайдер
+                if not self.world.has_component(enemy_id, Collider):
+                    continue
+                
+                enemy_pos = self.world.get_component(enemy_id, Position)
+                enemy_collider = self.world.get_component(enemy_id, Collider)
+                
+                # Проверяем столкновение пули с врагом
+                if self._check_circle_rect_collision(
+                    bullet_pos.x, bullet_pos.y, bullet_component.radius,
+                    enemy_pos.x, enemy_pos.y, enemy_collider.width, enemy_collider.height
+                ):
+                    # Наносим урон врагу
+                    if self.health_system:
+                        damage = self.health_system.damage_entity(enemy_id, bullet_component.damage, bullet_component.owner)
+                        if damage > 0:
+                            print(f"Нанесен урон врагу {enemy_id}: {damage} урона. Осталось здоровья: {self.world.get_component(enemy_id, Health).current}")
+                    
+                    # Создаем эффект попадания
+                    self._create_hit_effect(bullet_pos.x, bullet_pos.y, (150, 150, 0))
+                    
+                    return True
+        else:
+            # Если пуля принадлежит врагу или никому, проверяем столкновение с игроком
+            player_entities = self.world.get_entities_with_components(Position, Player)
+            
+            for player_id in player_entities:
+                # Проверяем, есть ли у игрока коллайдер
+                if not self.world.has_component(player_id, Collider):
+                    continue
+                
+                player_pos = self.world.get_component(player_id, Position)
+                player_collider = self.world.get_component(player_id, Collider)
+                
+                # Проверяем столкновение пули с игроком
+                if self._check_circle_rect_collision(
+                    bullet_pos.x, bullet_pos.y, bullet_component.radius,
+                    player_pos.x, player_pos.y, player_collider.width, player_collider.height
+                ):
+                    # Наносим урон игроку
+                    if self.health_system:
+                        damage = self.health_system.damage_entity(player_id, bullet_component.damage, bullet_component.owner)
+                        if damage > 0:
+                            print(f"ВАЖНО: Нанесен урон игроку: {damage} урона. Осталось здоровья: {self.world.get_component(player_id, Health).current}")
+                    
+                    # Создаем эффект попадания
+                    self._create_hit_effect(bullet_pos.x, bullet_pos.y, (255, 0, 0))
+                    
+                    return True
+        
+        # Проверяем столкновение со стенами
+        wall_entities = self.world.get_entities_with_components(Position, Tile, Collider)
+        
+        for wall_id in wall_entities:
+            wall_tile = self.world.get_component(wall_id, Tile)
+            
+            # Пропускаем проходимые тайлы
+            if wall_tile.walkable:
+                continue
+            
+            wall_pos = self.world.get_component(wall_id, Position)
+            wall_collider = self.world.get_component(wall_id, Collider)
+            
+            # Проверяем столкновение пули со стеной
+            if self._check_circle_rect_collision(
+                bullet_pos.x, bullet_pos.y, bullet_component.radius,
+                wall_pos.x, wall_pos.y, wall_collider.width, wall_collider.height
+            ):
+                # Создаем эффект попадания
+                self._create_hit_effect(bullet_pos.x, bullet_pos.y, (150, 150, 150))
+                
+                return True
+        
+        return False 
