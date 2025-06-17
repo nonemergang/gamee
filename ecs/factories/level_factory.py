@@ -1,6 +1,6 @@
 import random
 import pygame
-from ecs.components.components import Position, Sprite, Collider, Tile
+from ecs.components.components import Position, Sprite, Collider, Tile, Portal, Minimap
 from ecs.factories.prim_maze_generator import generate_prim_maze
 from ecs.utils.sprite_manager import sprite_manager
 
@@ -54,9 +54,38 @@ def create_level(world, width, height):
     exit_count = sum(row.count(4) for row in level_map)
     print(f"Типы тайлов в карте: стены={wall_count}, пол={floor_count}, вход={entrance_count}, выход={exit_count}")
     
+    # Проверяем, есть ли выход в карте
+    if exit_count == 0:
+        print("ОШИБКА: В сгенерированной карте нет выхода! Принудительно создаем его.")
+        # Создаем выход принудительно в правом нижнем углу
+        x = width - 2
+        y = height - 2
+        level_map[y][x] = 4  # Устанавливаем тип тайла "выход"
+        print(f"Создан выход в позиции ({x}, {y})")
+        
+        # Убеждаемся, что путь к выходу проходим
+        level_map[y-1][x] = 2  # Делаем соседние клетки проходимыми
+        level_map[y][x-1] = 2
+        exit_count = 1
+    
+    # Повторно проверяем количество тайлов после возможного исправления
+    if exit_count != 1:
+        print(f"ВНИМАНИЕ: После проверки количество выходов = {exit_count}")
+    
+    # Сохраняем координаты входа и выхода для мини-карты
+    entrance_pos = None
+    exit_pos = None
+    
     # Создаем тайлы
     walls_created = 0
     floors_created = 0
+    exits_created = 0  # Счетчик созданных выходов
+    
+    # Выводим карту для отладки
+    print("Карта уровня:")
+    for row in level_map:
+        print(''.join(str(cell) for cell in row))
+    
     for y in range(height):
         for x in range(width):
             if y < len(level_map) and x < len(level_map[y]):
@@ -98,11 +127,46 @@ def create_level(world, width, height):
                 walkable = True
                 layer = 0
                 tile_name = "entrance"
-            elif tile_type == 4:  # Выход из лабиринта
+                entrance_pos = (x, y)  # Сохраняем координаты входа
+            elif tile_type == 4:  # Выход из лабиринта (портал на следующий уровень)
                 texture = textures["exit"]
                 walkable = True
                 layer = 0
                 tile_name = "exit"
+                exit_pos = (x, y)  # Сохраняем координаты выхода
+                exits_created += 1  # Увеличиваем счетчик созданных выходов
+                
+                # Выводим отладочную информацию
+                print(f"Создаем портал в позиции ({x}, {y})")
+                
+                # Увеличиваем размер портала для лучшей видимости
+                sprite_width = tile_size * 2
+                sprite_height = tile_size * 2
+                
+                # Add portal component to exit tiles
+                portal_component = Portal(destination="next_level", active=True)
+                world.add_component(tile_id, Portal(destination="next_level", active=True))
+                
+                # Добавляем компоненты
+                world.add_component(tile_id, Tile(tile_name, walkable))
+                position_component = Position(x * tile_size + tile_size / 2, y * tile_size + tile_size / 2)
+                world.add_component(tile_id, position_component)
+                
+                # Создаем увеличенный и яркий спрайт портала
+                portal_sprite = Sprite(image=texture, width=sprite_width, height=sprite_height, layer=layer)
+                # Делаем портал ярко-фиолетовым для лучшей видимости
+                portal_sprite.color_overlay = (255, 0, 255)  # Яркий розовый цвет
+                world.add_component(tile_id, portal_sprite)
+                
+                # Проверяем, добавились ли компоненты
+                if world.has_component(tile_id, Portal) and world.has_component(tile_id, Position):
+                    print(f"Портал успешно создан. Компоненты: Portal={portal_component}, Position={position_component}")
+                else:
+                    print("ОШИБКА: Не удалось добавить компоненты к порталу!")
+                
+                # Пропускаем добавление стандартного спрайта
+                level_entities.append(tile_id)
+                continue
             else:
                 texture = None
                 color = (150, 150, 150)
@@ -128,8 +192,106 @@ def create_level(world, width, height):
             
             level_entities.append(tile_id)
     
-    print(f"Создано тайлов: стены={walls_created}, пол={floors_created}, всего={len(level_entities)}")
+    # Создаем мини-карту, если найдены вход и выход
+    if entrance_pos and exit_pos:
+        create_minimap(world, level_map, entrance_pos, exit_pos, width, height)
+    
+    print(f"Создано тайлов: стены={walls_created}, пол={floors_created}, выходы={exits_created}, всего={len(level_entities)}")
+    
+    # Проверяем, есть ли порталы в мире
+    portal_entities = world.get_entities_with_components(Portal)
+    print(f"Порталов в мире после создания уровня: {len(portal_entities)}")
+    for portal_id in portal_entities:
+        portal = world.get_component(portal_id, Portal)
+        position = world.get_component(portal_id, Position)
+        print(f"Портал: destination={portal.destination}, active={portal.active}, position=({position.x}, {position.y})")
+    
+    # Если порталы не были созданы, создаем его принудительно
+    if len(portal_entities) == 0:
+        print("Порталы не были созданы! Создаем портал принудительно.")
+        
+        # Создаем сущность для портала
+        portal_id = world.create_entity()
+        
+        # Определяем позицию портала (в правом нижнем углу карты)
+        portal_x = (width - 2) * tile_size + tile_size / 2
+        portal_y = (height - 2) * tile_size + tile_size / 2
+        
+        # Добавляем компоненты порталу
+        portal_component = Portal(destination="next_level", active=True)
+        world.add_component(portal_id, portal_component)
+        world.add_component(portal_id, Position(portal_x, portal_y))
+        
+        # Создаем яркий спрайт для портала
+        texture = textures["exit"]
+        sprite_width = tile_size * 3  # Делаем портал еще больше для заметности
+        sprite_height = tile_size * 3
+        portal_sprite = Sprite(image=texture, width=sprite_width, height=sprite_height, layer=2)  # Повышаем слой для отображения поверх других объектов
+        portal_sprite.color_overlay = (255, 0, 255)  # Яркий розовый цвет
+        world.add_component(portal_id, portal_sprite)
+        
+        # Добавляем сущность в список
+        level_entities.append(portal_id)
+        
+        print(f"Портал принудительно создан в позиции ({portal_x}, {portal_y})")
+        
+        # Обновляем список порталов для проверки
+        portal_entities = world.get_entities_with_components(Portal)
+        print(f"Порталов в мире после принудительного создания: {len(portal_entities)}")
+    
     return level_entities
+
+def create_minimap(world, level_map, entrance_pos, exit_pos, width, height):
+    """
+    Создает мини-карту для игрока, показывающую расположение портала
+    :param world: Мир ECS
+    :param level_map: Карта уровня
+    :param entrance_pos: Координаты входа (x, y)
+    :param exit_pos: Координаты выхода (x, y)
+    :param width: Ширина карты
+    :param height: Высота карты
+    """
+    # Размеры мини-карты
+    minimap_width = 150
+    minimap_height = 150
+    
+    # Создаем поверхность для мини-карты
+    minimap_surface = pygame.Surface((minimap_width, minimap_height), pygame.SRCALPHA)
+    minimap_surface.fill((0, 0, 0, 150))  # Полупрозрачный черный фон
+    
+    # Масштабирование карты для мини-карты
+    scale_x = minimap_width / width
+    scale_y = minimap_height / height
+    
+    # Рисуем вход и выход на мини-карте
+    # Вход - зеленый круг
+    entrance_x = int(entrance_pos[0] * scale_x)
+    entrance_y = int(entrance_pos[1] * scale_y)
+    pygame.draw.circle(minimap_surface, (0, 255, 0), (entrance_x, entrance_y), 5)
+    
+    # Выход (портал) - яркий розовый круг
+    exit_x = int(exit_pos[0] * scale_x)
+    exit_y = int(exit_pos[1] * scale_y)
+    pygame.draw.circle(minimap_surface, (255, 0, 255), (exit_x, exit_y), 8)
+    
+    # Добавляем текст "Вы здесь" и "Портал"
+    font = pygame.font.SysFont(None, 16)
+    entrance_text = font.render("Вы здесь", True, (0, 255, 0))
+    exit_text = font.render("Портал", True, (255, 0, 255))
+    
+    minimap_surface.blit(entrance_text, (entrance_x - entrance_text.get_width() // 2, entrance_y - 20))
+    minimap_surface.blit(exit_text, (exit_x - exit_text.get_width() // 2, exit_y - 20))
+    
+    # Рисуем линию от входа к выходу
+    pygame.draw.line(minimap_surface, (255, 255, 0), (entrance_x, entrance_y), (exit_x, exit_y), 2)
+    
+    # Создаем сущность для мини-карты
+    minimap_id = world.create_entity()
+    
+    # Добавляем компоненты для мини-карты
+    world.add_component(minimap_id, Minimap(surface=minimap_surface))
+    
+    print(f"Создана мини-карта с входом ({entrance_pos[0]}, {entrance_pos[1]}) и выходом ({exit_pos[0]}, {exit_pos[1]})")
 
 def _generate_prim_maze(width, height, corridor_width=3):
     """

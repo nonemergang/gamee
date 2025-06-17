@@ -1,5 +1,6 @@
+import random
 import pygame
-from ecs.components.components import Position, Velocity, Enemy, Sprite, Collider, Health
+from ecs.components.components import Position, Velocity, Enemy, Sprite, Collider, Health, Weapon
 from ecs.utils.sprite_manager import sprite_manager
 
 def create_enemy_texture():
@@ -8,57 +9,51 @@ def create_enemy_texture():
     """
     return sprite_manager.get_sprite("enemy")
 
-def create_enemy(world, x, y, enemy_type="basic"):
+def create_enemy(world, x, y, health_multiplier=1.0, damage_multiplier=1.0, speed_multiplier=1.0):
     """
     Создает врага
     :param world: Мир ECS
     :param x: Позиция X
     :param y: Позиция Y
-    :param enemy_type: Тип врага (basic, fast, tank)
+    :param health_multiplier: Множитель здоровья
+    :param damage_multiplier: Множитель урона
+    :param speed_multiplier: Множитель скорости
     :return: ID созданного врага
     """
     # Создаем сущность
     enemy_id = world.create_entity()
     
-    # Определяем параметры в зависимости от типа врага
-    if enemy_type == "fast":
-        speed = 150
-        damage = 5
-        health = 50
-        detection_radius = 400
-        attack_radius = 40
-        color = (255, 100, 100)
-        sprite_name = "enemy_fast"
-    elif enemy_type == "tank":
-        speed = 80
-        damage = 20
-        health = 200
-        detection_radius = 300
-        attack_radius = 60
-        color = (150, 50, 50)
-        sprite_name = "enemy_tank"
-    else:  # basic
-        speed = 100
-        damage = 10
-        health = 100
-        detection_radius = 350
-        attack_radius = 50
-        color = (200, 50, 50)
-        sprite_name = "enemy"
+    # Базовые характеристики врага
+    base_health = 50
+    base_damage = 10
+    base_speed = 80
     
-    # Пытаемся получить специфичный спрайт для типа врага
-    enemy_texture = sprite_manager.get_sprite(sprite_name)
-    
-    # Если не нашли специфичный спрайт, используем дефолтный
-    if enemy_texture is None:
-        enemy_texture = create_enemy_texture()
+    # Применяем множители
+    health = int(base_health * health_multiplier)
+    damage = int(base_damage * damage_multiplier)
+    speed = base_speed * speed_multiplier
     
     # Добавляем компоненты
     world.add_component(enemy_id, Position(x, y))
     world.add_component(enemy_id, Velocity())
-    world.add_component(enemy_id, Enemy(speed=speed, damage=damage, detection_radius=detection_radius, attack_radius=attack_radius))
-    world.add_component(enemy_id, Sprite(image=enemy_texture, width=32, height=32, layer=3))
+    world.add_component(enemy_id, Enemy(speed=speed, damage=damage))
+    
+    # Получаем текстуру врага
+    enemy_texture = sprite_manager.get_sprite("enemy")
+    
+    # Добавляем спрайт
+    world.add_component(enemy_id, Sprite(image=enemy_texture, width=32, height=32, layer=2))
+    
+    # Добавляем коллайдер
     world.add_component(enemy_id, Collider(width=28, height=28))
+    
+    # Добавляем здоровье
     world.add_component(enemy_id, Health(maximum=health, current=health))
+    
+    # Некоторые враги могут иметь оружие (с вероятностью 30%)
+    if random.random() < 0.3:
+        weapon = Weapon(damage=int(5 * damage_multiplier), fire_rate=1, bullet_speed=150)
+        weapon.cooldown = 0
+        world.add_component(enemy_id, weapon)
     
     return enemy_id 

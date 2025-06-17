@@ -7,12 +7,12 @@ from ecs.components.components import Position, Player
 class LightingSystem(System):
     """Система для создания эффекта плавного освещения вокруг игрока"""
     
-    def __init__(self, world, screen, camera_system):
+    def __init__(self, world, screen, camera_system=None):
         """
         Инициализирует систему освещения
         :param world: Мир ECS
         :param screen: Поверхность Pygame для отрисовки
-        :param camera_system: Система камеры для преобразования координат
+        :param camera_system: Система камеры для преобразования координат (опционально)
         """
         super().__init__(world)
         self.screen = screen
@@ -25,14 +25,19 @@ class LightingSystem(System):
         # Создаем поверхность для затемнения
         self.darkness_surface = pygame.Surface((screen.get_width(), screen.get_height()), pygame.SRCALPHA)
         
-        # Создаем радиальный градиент для затемнения
-        self.gradient_surface = self._create_radial_gradient(screen.get_width(), screen.get_height(), self.light_radius, self.darkness_alpha)
+        # Создаем радиальный градиент для затемнения только если camera_system доступна
+        if self.camera_system:
+            self.gradient_surface = self._create_radial_gradient(screen.get_width(), screen.get_height(), self.light_radius, self.darkness_alpha)
     
     def update(self, dt):
         """
         Обновляет эффект освещения
         :param dt: Время, прошедшее с последнего обновления (в секундах)
         """
+        # Если нет camera_system, пропускаем обновление
+        if not self.camera_system:
+            return
+            
         # Находим игрока
         player_entities = self.world.get_entities_with_components(Player, Position)
         if not player_entities:

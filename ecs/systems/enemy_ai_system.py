@@ -18,6 +18,7 @@ class EnemyAISystem(System):
         self.path_update_interval = 0.5  # Обновляем путь каждые 0.5 секунды
         self.enemy_paths = {}  # Словарь для хранения путей врагов
         self.debug_mode = False  # Отключаем режим отладки для отображения путей
+        self.weapon_system = None  # Reference to the weapon system for bosses to shoot
     
     def set_level_map(self, level_map, width, height):
         """
@@ -43,6 +44,13 @@ class EnemyAISystem(System):
         # Обновляем таймер для пересчета путей
         self.path_update_timer += dt
         should_update_paths = self.path_update_timer >= self.path_update_interval
+        
+        # Update shoot cooldowns for boss enemies
+        enemy_entities = self.world.get_entities_with_components(Enemy)
+        for enemy_id in enemy_entities:
+            enemy = self.world.get_component(enemy_id, Enemy)
+            if enemy.shoot_cooldown > 0:
+                enemy.shoot_cooldown -= dt
         
         # Получаем всех врагов
         enemy_entities = self.world.get_entities_with_components(Enemy, Position, Velocity)
@@ -75,21 +83,58 @@ class EnemyAISystem(System):
             
             # Обновляем состояние врага
             if distance < enemy.detection_radius:
-                # Если игрок в зоне обнаружения, используем поиск пути
-                
-                # Если нужно обновить путь или у этого врага еще нет пути
-                if should_update_paths or enemy_id not in self.enemy_paths:
-                    # Находим путь к игроку
-                    path = self._find_path(enemy_pos.x, enemy_pos.y, player_pos.x, player_pos.y)
-                    self.enemy_paths[enemy_id] = path
+                # Special behavior for boss enemies
+                if enemy.is_boss and self.world.has_component(enemy_id, "Weapon"):
+                    # Boss tries to maintain optimal shooting distance
+                    optimal_distance = 200
                     
-                    # Обновляем или добавляем компонент PathDebug для отображения пути
-                    if self.debug_mode:
-                        if self.world.has_component(enemy_id, PathDebug):
-                            path_debug = self.world.get_component(enemy_id, PathDebug)
-                            path_debug.path = path
-                        else:
-                            self.world.add_component(enemy_id, PathDebug(path))
+                    if distance < optimal_distance - 50:
+                        # Too close, move away from player
+                        if distance > 0:
+                            dx = (enemy_pos.x - player_pos.x) / distance
+                            dy = (enemy_pos.y - player_pos.y) / distance
+                            enemy_vel.dx = dx * enemy.speed * 0.7  # Move slower when backing up
+                            enemy_vel.dy = dy * enemy.speed * 0.7
+                    elif distance > optimal_distance + 50:
+                        # Too far, move toward player
+                        if distance > 0:
+                            dx = (player_pos.x - enemy_pos.x) / distance
+                            dy = (player_pos.y - enemy_pos.y) / distance
+                            enemy_vel.dx = dx * enemy.speed
+                            enemy_vel.dy = dy * enemy.speed
+                    else:
+                        # At good range, move laterally to avoid player shots
+                        perpendicular_x = -dy / distance if distance > 0 else 0
+                        perpendicular_y = dx / distance if distance > 0 else 0
+                        direction = 1 if (enemy_id % 2 == 0) else -1  # Alternate movement direction
+                        enemy_vel.dx = perpendicular_x * enemy.speed * direction * 0.5
+                        enemy_vel.dy = perpendicular_y * enemy.speed * direction * 0.5
+                    
+                    # Try to shoot at player
+                    if distance < enemy.attack_radius and enemy.shoot_cooldown <= 0 and self.weapon_system:
+                        self.weapon_system.fire_bullet(enemy_id, player_pos.x, player_pos.y)
+                        enemy.shoot_cooldown = 2.0  # Set cooldown between shots
+                    
+                    # Reset path for boss as we're handling movement directly
+                    if enemy_id in self.enemy_paths:
+                        self.enemy_paths[enemy_id] = []
+                else:
+                    # Normal enemy behavior - use pathfinding
+                    # Если игрок в зоне обнаружения, используем поиск пути
+                    
+                    # Если нужно обновить путь или у этого врага еще нет пути
+                    if should_update_paths or enemy_id not in self.enemy_paths:
+                        # Находим путь к игроку
+                        path = self._find_path(enemy_pos.x, enemy_pos.y, player_pos.x, player_pos.y)
+                        self.enemy_paths[enemy_id] = path
+                        
+                        # Обновляем или добавляем компонент PathDebug для отображения пути
+                        if self.debug_mode:
+                            if self.world.has_component(enemy_id, PathDebug):
+                                path_debug = self.world.get_component(enemy_id, PathDebug)
+                                path_debug.path = path
+                            else:
+                                self.world.add_component(enemy_id, PathDebug(path))
                 
                 # Если у врага есть путь
                 if enemy_id in self.enemy_paths and self.enemy_paths[enemy_id]:
@@ -157,6 +202,13 @@ class EnemyAISystem(System):
                     path_debug = self.world.get_component(enemy_id, PathDebug)
                     path_debug.path = []
     
+    def set_weapon_system(self, weapon_system):
+        """
+        Set the weapon system reference
+        :param weapon_system: Reference to the weapon system
+        """
+        self.weapon_system = weapon_system
+    
     def _attack_player(self, enemy_id, player_id):
         """
         Атакует игрока
@@ -170,7 +222,19 @@ class EnemyAISystem(System):
         # Получаем компоненты
         enemy = self.world.get_component(enemy_id, Enemy)
         player_health = self.world.get_component(player_id, Health)
+        player_pos = self.world.get_component(player_id, Position)
+        enemy_pos = self.world.get_component(enemy_id, Position)
         
+        # Check if this is a boss enemy with a weapon (ranged attack)
+        if enemy.is_boss and self.world.has_component(enemy_id, "Weapon") and self.weapon_system:
+            # Boss will prioritize ranged attacks if possible
+            if enemy.shoot_cooldown <= 0:
+                # Fire at the player
+                self.weapon_system.fire_bullet(enemy_id, player_pos.x, player_pos.y)
+                enemy.shoot_cooldown = 2.0  # Set cooldown between shots
+                return
+        
+        # For normal enemies or if boss can't shoot, do melee attack
         # Наносим урон игроку
         player_health.current -= enemy.damage
         

@@ -264,74 +264,52 @@ def add_entrance_exit(maze, width, height):
     """
     Добавляет вход и выход в лабиринт
     """
-    # Ищем проходы по периметру для размещения входа и выхода
-    perimeter_passages = []
+    print("Создание входа и выхода из лабиринта")
     
-    # Верхняя и нижняя стороны
-    for x in range(1, width-1):
-        if maze[1][x] == 2:
-            perimeter_passages.append((x, 0))
-        if maze[height-2][x] == 2:
-            perimeter_passages.append((x, height-1))
+    # Принудительно создаем вход и выход в противоположных сторонах лабиринта
+    # Вход - всегда в верхней левой части
+    entrance_x = random.randrange(1, width // 3)
+    entrance_y = 0
     
-    # Левая и правая стороны
-    for y in range(1, height-1):
-        if maze[y][1] == 2:
-            perimeter_passages.append((0, y))
-        if maze[y][width-2] == 2:
-            perimeter_passages.append((width-1, y))
+    # Выход - всегда в нижней правой части
+    exit_x = random.randrange(width * 2 // 3, width - 1)
+    exit_y = height - 1
     
-    # Если не нашли проходы по периметру, создаем их
-    if not perimeter_passages:
-        print("Не найдены проходы по периметру, создаем искусственно")
-        # Создаем вход сверху
-        x = random.randrange(1, width-1, 2)
-        maze[0][x] = 2
-        maze[1][x] = 2
-        perimeter_passages.append((x, 0))
-        
-        # Создаем выход снизу
-        x = random.randrange(1, width-1, 2)
-        maze[height-1][x] = 2
-        maze[height-2][x] = 2
-        perimeter_passages.append((x, height-1))
+    # Устанавливаем вход и убираем стены для прохода
+    maze[entrance_y][entrance_x] = 3  # Вход
+    maze[entrance_y + 1][entrance_x] = 2  # Проход после входа
     
-    print(f"Найдено проходов по периметру: {len(perimeter_passages)}")
+    # Устанавливаем выход и убираем стены для прохода
+    maze[exit_y][exit_x] = 4  # Выход
+    maze[exit_y - 1][exit_x] = 2  # Проход перед выходом
     
-    # Выбираем случайные точки для входа и выхода, но убедимся, что они находятся далеко друг от друга
-    entrance_candidates = []
-    exit_candidates = []
+    # Создаем явный путь от входа к выходу, чтобы гарантировать проходимость
+    # Сначала движемся вниз до середины
+    current_x = entrance_x
+    current_y = entrance_y + 1
     
-    # Разделяем перименты на две половины для входа и выхода
-    for pos in perimeter_passages:
-        x, y = pos
-        # Вход в верхней или левой части
-        if x < width // 2 or y < height // 2:
-            entrance_candidates.append(pos)
-        # Выход в нижней или правой части
-        else:
-            exit_candidates.append(pos)
+    mid_y = height // 2
+    while current_y < mid_y:
+        maze[current_y][current_x] = 2  # Проход
+        current_y += 1
     
-    # Если одна из групп пуста, перераспределяем кандидатов
-    if not entrance_candidates:
-        # Берем половину из exit_candidates
-        middle = len(exit_candidates) // 2
-        entrance_candidates = exit_candidates[:middle]
-        exit_candidates = exit_candidates[middle:]
-    elif not exit_candidates:
-        # Берем половину из entrance_candidates
-        middle = len(entrance_candidates) // 2
-        exit_candidates = entrance_candidates[middle:]
-        entrance_candidates = entrance_candidates[:middle]
+    # Затем движемся вправо до позиции над выходом
+    while current_x < exit_x:
+        maze[current_y][current_x] = 2  # Проход
+        current_x += 1
     
-    print(f"Кандидаты для входа: {len(entrance_candidates)}, для выхода: {len(exit_candidates)}")
+    # И наконец вниз до выхода
+    while current_y < exit_y:
+        maze[current_y][current_x] = 2  # Проход
+        current_y += 1
     
-    # Выбираем случайные точки для входа и выхода
-    entrance_pos = random.choice(entrance_candidates)
-    exit_pos = random.choice(exit_candidates)
+    print(f"Вход создан: {entrance_x}, {entrance_y}")
+    print(f"Выход создан: {exit_x}, {exit_y}")
     
-    # Устанавливаем вход и выход
-    maze[entrance_pos[1]][entrance_pos[0]] = 3  # Вход
-    maze[exit_pos[1]][exit_pos[0]] = 4  # Выход
+    # Дополнительная проверка
+    if maze[entrance_y][entrance_x] != 3 or maze[exit_y][exit_x] != 4:
+        print("ОШИБКА: Не удалось создать вход или выход!")
+    else:
+        print("Вход и выход успешно созданы")
     
     return maze 

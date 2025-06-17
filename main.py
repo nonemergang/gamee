@@ -14,10 +14,13 @@ from ecs.systems.camera_system import CameraSystem
 from ecs.factories.player_factory import create_player
 from ecs.factories.level_factory import create_level
 from ecs.factories.enemy_factory import create_enemy
-from ecs.components.components import Position, Tile, Player
+from ecs.components.components import Position, Tile, Player, GameProgress
 from ecs.systems.enemy_ai_system import EnemyAISystem
 from ecs.systems.health_system import HealthSystem
 from ecs.systems.lighting_system import LightingSystem
+from ecs.systems.portal_system import PortalSystem
+from ecs.systems.direction_indicator_system import DirectionIndicatorSystem
+from ecs.systems.minimap_system import MinimapSystem
 from ecs.utils.sprite_manager import sprite_manager
 
 # Инициализация Pygame
@@ -27,7 +30,7 @@ pygame.init()
 screen_width = 1024
 screen_height = 768
 screen = pygame.display.set_mode((screen_width, screen_height))
-pygame.display.set_caption("Лабиринт с ECS")
+pygame.display.set_caption("Рогалик в лабиринте")
 
 # Загружаем спрайты
 sprite_manager.load_sprites()
@@ -35,32 +38,42 @@ sprite_manager.load_sprites()
 # Создаем мир ECS
 world = World()
 
-# Регистрируем системы
+# Создаем системы
 camera_system = CameraSystem(world, screen_width, screen_height)
 render_system = RenderSystem(world, screen, camera_system)
-lighting_system = LightingSystem(world, screen, camera_system)
 movement_system = MovementSystem(world)
-collision_system = CollisionSystem(world)
 player_control_system = PlayerControlSystem(world)
+collision_system = CollisionSystem(world)
+enemy_system = EnemySystem(world)
+weapon_system = WeaponSystem(world, screen)
 enemy_ai_system = EnemyAISystem(world)
-weapon_system = WeaponSystem(world)
-health_system = HealthSystem(world)
+health_system = HealthSystem(world, screen)
+lighting_system = LightingSystem(world, screen)
+portal_system = PortalSystem(world)
+direction_indicator_system = DirectionIndicatorSystem(world, screen, camera_system)
+minimap_system = MinimapSystem(world, screen)
 
-# Устанавливаем ссылку на WeaponSystem в PlayerControlSystem
-player_control_system.set_weapon_system(weapon_system)
-
-world.add_system(movement_system)
-world.add_system(collision_system)
+# Добавляем системы в мир в порядке их выполнения
 world.add_system(player_control_system)
 world.add_system(enemy_ai_system)
-world.add_system(camera_system)
-world.add_system(render_system)
-# world.add_system(lighting_system)  # Отключено временно
+world.add_system(movement_system)
+world.add_system(collision_system)
+world.add_system(enemy_system)
 world.add_system(weapon_system)
 world.add_system(health_system)
+world.add_system(portal_system)
+world.add_system(camera_system)
+world.add_system(lighting_system)
+world.add_system(direction_indicator_system)
+world.add_system(minimap_system)
+world.add_system(render_system)
 
-# Создаем шрифт для отображения FPS
+# Устанавливаем систему оружия для PlayerControlSystem
+player_control_system.set_weapon_system(weapon_system)
+
+# Создаем шрифт для отображения FPS и прогресса
 fps_font = pygame.font.SysFont(None, 24)
+ui_font = pygame.font.SysFont(None, 32)
 
 def reset_game():
     """Сбрасывает игру и создает новый уровень"""
@@ -68,8 +81,8 @@ def reset_game():
     world.clear_entities()
     
     # Создаем новый уровень (лабиринт)
-    level_width = 20  # Уменьшенный размер для более компактного лабиринта
-    level_height = 20
+    level_width = 30  # Увеличенный размер лабиринта для гарантированного создания выхода
+    level_height = 30
     level_entities = create_level(world, level_width, level_height)
     
     # Находим начальную позицию (вход в лабиринт)
@@ -103,7 +116,7 @@ def reset_game():
     player_id = create_player(world, entrance_pos.x, entrance_pos.y)
     
     # Создаем врагов в случайных местах
-    enemy_count = 3  # Меньше врагов для более компактной игры
+    enemy_count = 3  # Начальное количество врагов
     floor_tiles = []
     
     # Собираем все проходимые тайлы
@@ -136,6 +149,13 @@ def reset_game():
     
     # Устанавливаем камеру на игрока
     camera_system.follow(player_id)
+    
+    # Создаем компонент прогресса игры
+    game_progress = GameProgress()
+    
+    # Передаем компонент прогресса в систему порталов
+    if hasattr(portal_system, 'game_progress'):
+        portal_system.game_progress = game_progress
 
 # Инициализация игры
 reset_game()
@@ -144,6 +164,7 @@ reset_game()
 clock = pygame.time.Clock()
 running = True
 show_fps = True
+show_help = False
 target_fps = 60
 frame_times = []  # Для расчета скользящего среднего FPS
 
@@ -168,6 +189,9 @@ while running:
             elif event.key == pygame.K_F2:
                 # Включение/выключение отображения FPS
                 show_fps = not show_fps
+            elif event.key == pygame.K_h:
+                # Включение/выключение справки
+                show_help = not show_help
             elif event.key == pygame.K_PLUS or event.key == pygame.K_KP_PLUS or event.key == pygame.K_EQUALS:
                 # Увеличение масштаба камеры
                 current_zoom = camera_system.get_zoom()
@@ -188,40 +212,74 @@ while running:
     # Обновляем все системы
     world.update(dt)
     
-    # Проверяем, жив ли игрок
-    player_entities = world.get_entities_with_components(Position, Player)
-    if not player_entities:
-        # Если игрок умер, сбрасываем игру
-        reset_game()
+    # Отрисовываем все системы
+    screen.fill((0, 0, 0))  # Очищаем экран
+    
+    # Вызываем методы render для всех систем
+    for system in world.systems:
+        if hasattr(system, 'render'):
+            system.render(camera_system)
     
     # Отображаем FPS
     if show_fps:
-        # Вычисляем время, затраченное на кадр
+        # Вычисляем скользящее среднее FPS
         frame_time = time.time() - frame_start_time
         frame_times.append(frame_time)
-        
-        # Храним только последние 60 кадров для расчета скользящего среднего
-        if len(frame_times) > 60:
+        if len(frame_times) > 30:  # Усредняем по последним 30 кадрам
             frame_times.pop(0)
-        
-        # Вычисляем среднее FPS
         avg_frame_time = sum(frame_times) / len(frame_times)
         fps = 1.0 / avg_frame_time if avg_frame_time > 0 else 0
         
         # Отображаем FPS
         fps_text = f"FPS: {fps:.1f}"
         fps_surface = fps_font.render(fps_text, True, (255, 255, 255))
-        screen.blit(fps_surface, (screen_width - 100, 10))
+        screen.blit(fps_surface, (10, 10))
+    
+    # Отображаем прогресс игры
+    if hasattr(portal_system, 'game_progress'):
+        progress = portal_system.game_progress
+        
+        # Отображаем информацию о прогрессе в верхнем правом углу
+        level_text = f"Уровень: {progress.level}"
+        score_text = f"Счет: {progress.total_score}"
+        kills_text = f"Убито: {progress.enemies_killed}"
+        
+        level_surface = ui_font.render(level_text, True, (255, 255, 255))
+        score_surface = ui_font.render(score_text, True, (255, 255, 255))
+        kills_surface = ui_font.render(kills_text, True, (255, 255, 255))
+        
+        screen.blit(level_surface, (screen_width - 200, 10))
+        screen.blit(score_surface, (screen_width - 200, 40))
+        screen.blit(kills_surface, (screen_width - 200, 70))
+    
+    # Отображаем справку
+    if show_help:
+        help_texts = [
+            "Управление:",
+            "WASD - Движение",
+            "ЛКМ - Стрельба",
+            "R - Перезапуск игры",
+            "F1 - Режим отладки",
+            "F2 - Показать/скрыть FPS",
+            "H - Показать/скрыть справку",
+            "+/- - Изменить масштаб",
+            "ESC - Выход"
+        ]
+        
+        # Создаем полупрозрачный фон для справки
+        help_surface = pygame.Surface((300, 30 * len(help_texts)), pygame.SRCALPHA)
+        help_surface.fill((0, 0, 0, 180))
+        
+        # Отрисовываем текст справки
+        for i, text in enumerate(help_texts):
+            text_surface = ui_font.render(text, True, (255, 255, 255))
+            help_surface.blit(text_surface, (10, 10 + i * 30))
+        
+        # Отображаем справку в правом нижнем углу
+        screen.blit(help_surface, (screen_width - 310, screen_height - 10 - 30 * len(help_texts)))
     
     # Обновляем экран
     pygame.display.flip()
-    
-    # Ограничиваем частоту кадров
-    frame_time = time.time() - frame_start_time
-    target_frame_time = 1.0 / target_fps
-    if frame_time < target_frame_time:
-        # Если кадр обработан быстрее, чем требуется, ждем оставшееся время
-        time.sleep(target_frame_time - frame_time)
 
 # Завершение работы
 pygame.quit()

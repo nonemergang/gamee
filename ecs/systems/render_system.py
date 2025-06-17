@@ -342,3 +342,77 @@ class RenderSystem(System):
                 except Exception as e:
                     # Если возникла ошибка при отрисовке частицы, пропускаем её
                     print(f"Ошибка при отрисовке частицы: {e}") 
+
+    def render(self, camera=None):
+        """
+        Отрисовывает все объекты на экране
+        :param camera: Камера для преобразования координат (не используется, так как у нас есть self.camera_system)
+        """
+        # Очищаем экран
+        self.screen.fill((0, 0, 0))
+        
+        # Получаем все сущности со спрайтами и позициями
+        sprite_entities = self.world.get_entities_with_components(Sprite, Position)
+        
+        # Сортируем сущности по слою спрайта (чтобы отрисовывать в правильном порядке)
+        sprite_entities.sort(key=lambda entity_id: self.world.get_component(entity_id, Sprite).layer)
+        
+        # Отрисовываем каждую сущность
+        for entity_id in sprite_entities:
+            sprite = self.world.get_component(entity_id, Sprite)
+            position = self.world.get_component(entity_id, Position)
+            
+            # Преобразуем мировые координаты в экранные с учетом камеры
+            screen_x, screen_y = self.camera_system.world_to_screen(position.x, position.y)
+            
+            # Создаем прямоугольник для отрисовки
+            rect = pygame.Rect(
+                screen_x - sprite.width / 2 * self.camera_system.get_zoom(),
+                screen_y - sprite.height / 2 * self.camera_system.get_zoom(),
+                sprite.width * self.camera_system.get_zoom(),
+                sprite.height * self.camera_system.get_zoom()
+            )
+            
+            # Проверяем, находится ли объект в пределах экрана
+            screen_rect = pygame.Rect(0, 0, self.screen.get_width(), self.screen.get_height())
+            if not screen_rect.colliderect(rect):
+                continue  # Пропускаем объекты вне экрана
+            
+            # Если у спрайта есть изображение, отрисовываем его
+            if sprite.image:
+                # Если у спрайта есть угол поворота, поворачиваем изображение
+                if sprite.angle != 0:
+                    # Масштабируем изображение до нужного размера с учетом масштаба камеры
+                    scaled_image = pygame.transform.scale(sprite.image, (
+                        int(sprite.width * self.camera_system.get_zoom()),
+                        int(sprite.height * self.camera_system.get_zoom())
+                    ))
+                    # Поворачиваем изображение
+                    rotated_image = pygame.transform.rotate(scaled_image, -sprite.angle)  # Отрицательный угол для правильного поворота
+                    # Получаем прямоугольник повернутого изображения
+                    rotated_rect = rotated_image.get_rect(center=rect.center)
+                    # Отрисовываем повернутое изображение
+                    self.screen.blit(rotated_image, rotated_rect)
+                else:
+                    # Отрисовываем изображение без поворота
+                    scaled_image = pygame.transform.scale(sprite.image, (
+                        int(sprite.width * self.camera_system.get_zoom()),
+                        int(sprite.height * self.camera_system.get_zoom())
+                    ))
+                    self.screen.blit(scaled_image, rect)
+            else:
+                # Если у спрайта нет изображения, отрисовываем прямоугольник с цветом
+                pygame.draw.rect(self.screen, sprite.color, rect)
+        
+        # Отрисовываем частицы эффектов попадания
+        self._render_hit_particles()
+        
+        # Отрисовываем пути (для отладки)
+        if self.debug:
+            self._render_paths()
+        
+        # Применяем эффект затемнения с градиентным кругом
+        self._render_darkness_effect()
+        
+        # Отрисовываем пользовательский интерфейс
+        self._render_ui() 

@@ -1,5 +1,6 @@
 import os
 import pygame
+import math
 
 class SpriteManager:
     """
@@ -122,12 +123,38 @@ class SpriteManager:
         pygame.draw.circle(entrance_sprite, (150, 250, 150), (tile_size//2, tile_size//2), tile_size//6)
         self.default_sprites["entrance"] = entrance_sprite
         
-        # Выход
+        # Выход (портал к боссу) - сделаем более яркий и заметный
         exit_sprite = pygame.Surface((tile_size, tile_size))
-        exit_sprite.fill((200, 100, 100))
-        # Добавляем узор
-        pygame.draw.circle(exit_sprite, (150, 50, 50), (tile_size//2, tile_size//2), tile_size//3)
-        pygame.draw.circle(exit_sprite, (250, 150, 150), (tile_size//2, tile_size//2), tile_size//6)
+        exit_sprite.fill((50, 0, 150))  # Тёмно-фиолетовый фон
+        
+        # Создаем яркий пульсирующий портал
+        # Внешний круг (яркий фиолетовый)
+        pygame.draw.circle(exit_sprite, (180, 50, 255), (tile_size//2, tile_size//2), tile_size//2 - 2)
+        # Средний круг (голубой)
+        pygame.draw.circle(exit_sprite, (80, 200, 255), (tile_size//2, tile_size//2), tile_size//3)
+        # Внутренний круг (яркий белый)
+        pygame.draw.circle(exit_sprite, (255, 255, 255), (tile_size//2, tile_size//2), tile_size//5)
+        
+        # Добавляем лучи, расходящиеся от центра
+        for i in range(8):
+            angle = i * math.pi / 4
+            x1 = tile_size//2 + int(math.cos(angle) * (tile_size//5))
+            y1 = tile_size//2 + int(math.sin(angle) * (tile_size//5))
+            x2 = tile_size//2 + int(math.cos(angle) * (tile_size//2 - 2))
+            y2 = tile_size//2 + int(math.sin(angle) * (tile_size//2 - 2))
+            pygame.draw.line(exit_sprite, (255, 255, 100), (x1, y1), (x2, y2), 2)
+        
+        # Добавляем вихревой эффект (спираль)
+        for i in range(16):
+            angle = i * math.pi / 8
+            radius = tile_size // 4 + i
+            thickness = 2 if i % 2 == 0 else 1
+            x1 = tile_size//2 + int(math.cos(angle) * (radius * 0.3))
+            y1 = tile_size//2 + int(math.sin(angle) * (radius * 0.3))
+            x2 = tile_size//2 + int(math.cos(angle + 0.7) * (radius * 0.7))
+            y2 = tile_size//2 + int(math.sin(angle + 0.7) * (radius * 0.7))
+            pygame.draw.line(exit_sprite, (200, 150, 255), (x1, y1), (x2, y2), thickness)
+        
         self.default_sprites["exit"] = exit_sprite
     
     def get_sprite(self, name):

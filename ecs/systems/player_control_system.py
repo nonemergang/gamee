@@ -11,7 +11,7 @@ class PlayerControlSystem(System):
     def __init__(self, world):
         super().__init__(world)
         self.weapon_system = None
-        self.debug_mode = True  # Режим отладки
+        self.debug_mode = False  # Отключаем режим отладки
     
     def set_weapon_system(self, weapon_system):
         """
@@ -19,6 +19,7 @@ class PlayerControlSystem(System):
         :param weapon_system: Система оружия
         """
         self.weapon_system = weapon_system
+        print(f"WeaponSystem установлена: {weapon_system}")
     
     def update(self, dt):
         """
@@ -40,8 +41,8 @@ class PlayerControlSystem(System):
             # Проверяем наличие спрайта для поворота
             has_sprite = self.world.has_component(player_id, Sprite)
             
-            # Проверяем наличие компонента Weapon
-            has_weapon = self.world.has_component(player_id, "Weapon")
+            # Проверяем наличие компонента Weapon (используем класс Weapon, а не строку)
+            has_weapon = self.world.has_component(player_id, Weapon)
             if self.debug_mode and not has_weapon:
                 print(f"У игрока нет компонента Weapon!")
             
@@ -88,22 +89,32 @@ class PlayerControlSystem(System):
                     # В Pygame 0 градусов - это направление вправо, а 90 градусов - вниз
                     # Мы хотим, чтобы спрайт смотрел вверх при 0 градусов
                     sprite.angle = angle + 90
-                    
-                    if self.debug_mode:
-                        print(f"Угол поворота: {sprite.angle:.1f}°")
             
                 # Обработка стрельбы
                 mouse_buttons = pygame.mouse.get_pressed()
-                if mouse_buttons[0] and self.weapon_system:  # Левая кнопка мыши
+                if mouse_buttons[0]:  # Левая кнопка мыши
                     if self.debug_mode:
                         print(f"Клик мыши: экран({mouse_x}, {mouse_y}), мир({world_mouse_x:.1f}, {world_mouse_y:.1f})")
                         print(f"Игрок: ({position.x:.1f}, {position.y:.1f})")
                     
+                    # Проверяем наличие weapon_system
+                    if not self.weapon_system:
+                        print("weapon_system не установлена! Поиск WeaponSystem среди систем...")
+                        self.weapon_system = next((system for system in self.world.systems if isinstance(system, WeaponSystem)), None)
+                        if self.weapon_system:
+                            print(f"WeaponSystem найдена: {self.weapon_system}")
+                        else:
+                            print("WeaponSystem не найдена среди систем мира!")
+                    
                     # Стреляем в направлении мыши
-                    if has_weapon:
+                    if has_weapon and self.weapon_system:
+                        # Передаем целевые координаты для выстрела
                         self.weapon_system.fire_bullet(player_id, world_mouse_x, world_mouse_y)
                     elif self.debug_mode:
-                        print("Не могу стрелять: у игрока нет оружия")
+                        if not has_weapon:
+                            print("Не могу стрелять: у игрока нет оружия")
+                        if not self.weapon_system:
+                            print("Не могу стрелять: нет системы оружия")
             
             # Обработка перезарядки (клавиша R)
             if keys[pygame.K_r] and self.weapon_system and has_weapon:
